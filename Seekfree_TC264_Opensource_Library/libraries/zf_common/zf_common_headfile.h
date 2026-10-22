@@ -120,7 +120,7 @@
 //====================================================应用组件层====================================================
 
 //=====================================================用户层======================================================
-#include "SATA.h"
+#include "SATA_MAIN.h"
 #include "LED_REMAIN.h"
 #include "Motor_REMAIN.h"
 #include "LCD_REMAIN.h"
@@ -128,6 +128,10 @@
 #include "Servo_REMAIN.h"
 #include "Camera_REMAIN.h"
 #include "Badpoint_REMAIN.h"
+#include "Bedline_REMAIN.h"
+#include "MIDLine_REMAIN.h"
+#include "Control_REMAIN.h"
+#include "Encoder_REMAIN.h"
 //=====================================================用户层======================================================
 
 #endif

@@ -1,28 +1,24 @@
-# ---------- ADS / Eclipse 工作区状态（本机相关，不纳入仓库） ----------
+# Eclipse / ADS
 .metadata/
-*.pdom
-*.log
-
-# ---------- 编译产物（ADS 构建时自动重新生成） ----------
-Seekfree_TC264_Opensource_Library/Debug/
+.settings/.tmp/
 Debug/
+Release/
+
+# 编译产物
 *.o
-*.obj
 *.d
 *.src
-*.pre
 *.elf
 *.hex
 *.map
-*.lst
-*.pdb
+*.obj
+*.pdom
+*.abs
 
-# 注意：libraries/zf_device/zf_device_config.a 是逐飞提供的静态库，必须保留，不要忽略
-
-# ---------- 本地临时文件 / 备份 ----------
+# 备份
 _backup_before_fix/
 *.bak
-*.tmp
-*~
+
+# 系统
 Thumbs.db
 desktop.ini
