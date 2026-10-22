@@ -33,20 +33,22 @@ void Servo_Init(void)
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     直接输出舵机占空比（带限幅）
-// 参数说明     duty            占空比，范围 Servo_MID ± SERVO_DUTY_RANGE
+// 参数说明     duty            占空比，超出 Servo_MID-SERVO_DUTY_RANGE_R ~ Servo_MID+SERVO_DUTY_RANGE_L 会被夹住
 // 返回参数     void
 // 使用示例     Servo_Set_Duty(Servo_MID);
 // 备注信息     限幅是为了保护舵机，不要让它长期顶到机械死点
 //-------------------------------------------------------------------------------------------------------------------
 void Servo_Set_Duty(int32 duty)
 {
-    if(duty > (int32)(Servo_MID + SERVO_TRIM + SERVO_DUTY_RANGE))
+    /* 左右不对称硬限幅：不管指令从哪来（打角、标定、以后新加的函数），都在这里被卡死，
+     * 保证占空比永远落在 395 ~ 534 之间，不会把舵机推到机械死点上堵转。 */
+    if(duty > (int32)(Servo_MID + SERVO_TRIM + SERVO_DUTY_RANGE_L))
     {
-        duty = (int32)(Servo_MID + SERVO_TRIM + SERVO_DUTY_RANGE);
+        duty = (int32)(Servo_MID + SERVO_TRIM + SERVO_DUTY_RANGE_L);
     }
-    if(duty < (int32)(Servo_MID + SERVO_TRIM - SERVO_DUTY_RANGE))
+    if(duty < (int32)(Servo_MID + SERVO_TRIM - SERVO_DUTY_RANGE_R))
     {
-        duty = (int32)(Servo_MID + SERVO_TRIM - SERVO_DUTY_RANGE);
+        duty = (int32)(Servo_MID + SERVO_TRIM - SERVO_DUTY_RANGE_R);
     }
     pwm_set_duty(SERVO_PWM_PIN, (uint32)duty);
 }

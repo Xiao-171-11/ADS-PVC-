@@ -41,7 +41,7 @@ Seekfree_TC264_Opensource_Library/
 │   ├── Motor_REMAIN.c/.h    ★ 电机（PWM + 方向）
 │   ├── Control_REMAIN.c/.h  ★ 控制总成（速度环 PID + 差速 + 舵机环），5ms 中断里跑
 │   ├── PIT_REMAIN.c/.h      ★ 5ms 控制节拍
-│   ├── LCD_REMAIN.c/.h  LED_REMAIN.c/.h   辅助
+│   ├── LCD_REMAIN.c/.h                    辅助
 │   └── 其他 *REMAIN           预留模块
 ├── user/
 │   ├── cpu0_main.c          只做 clock_init + debug_init + SATA_MAIN()
@@ -58,7 +58,7 @@ Seekfree_TC264_Opensource_Library/
 
 | 引脚 | 对应部分 | 宏 / 文件 | 备注 |
 |---|---|---|---|
-| `P33_9` | **舵机** PWM（ATOM0_CH1，50 Hz） | `SERVO_PWM_PIN` · `code/Servo_REMAIN.h` | 中值 465；偏大向左、偏小向右 |
+| `P33_9` | **舵机** PWM（ATOM0_CH1，50 Hz） | `SERVO_PWM_PIN` · `code/Servo_REMAIN.h` | 中值 **464**，机械行程 **395~534**；偏大向左、偏小向右 |
 | `P02_4` | **左后电机** PWM（ATOM0_CH4，5 kHz） | `Motor_L_pwm` · `code/Motor_REMAIN.h` | 占空比 0~10000 |
 | `P02_5` | 左后电机 **方向 DIR** | `Motor_L_turn` · 同上 | 方向反了改 `MOTOR_DIR_REVERSE_L` |
 | `P02_6` | **右后电机** PWM（ATOM0_CH6，5 kHz） | `Motor_R_pwm` · 同上 | |
@@ -84,7 +84,7 @@ Seekfree_TC264_Opensource_Library/
 | `P15_3` / `P15_5` | TFT180 **SCL / SDA(MOSI)** | 硬件 SPI2 |
 | `P15_1` / `P15_0` | TFT180 **RES / DC** | |
 | `P15_2` / `P15_4` | TFT180 **CS / BL(背光)** | |
-| `P21_5` `P21_4` `P20_8` `P20_9` | **指示灯 LED** | `code/LED_REMAIN.c`，本程序未使用 |
+| `P21_5` `P21_4` `P20_8` `P20_9` | 原指示灯 LED（**已删**） | 代码已移除，四个脚现为**空闲**，可改作他用 |
 
 ### 3.4 引脚占用一览（改接线时避开这些）
 
@@ -93,7 +93,7 @@ P00_0~P00_7   摄像头数据口 D0~D7        P02_0~P02_3   摄像头 VSYNC / PC
 P02_4~P02_7   左/右后电机 PWM + DIR     P02_8         右编码器 A
 P00_9         右编码器 B                P33_6 / P33_7 左编码器 B / A
 P33_9         舵机                      P15_0~P15_5   TFT180
-P21_4 P21_5 P20_8 P20_9                指示灯 LED
+P21_4 P21_5 P20_8 P20_9                （LED 代码已删，空闲）
 ```
 
 > 编码器这四根选的是**没被摄像头、电机、屏幕、LED 占用**的空闲脚。实物接线不同的话，改 `Encoder_REMAIN.h` 里 4 行宏即可，
@@ -138,8 +138,17 @@ P21_4 P21_5 P20_8 P20_9                指示灯 LED
 
 | 宏 | 默认 | 含义 |
 |---|---|---|
-| `Servo_MID` / `SERVO_TRIM` | 465 / 0 | 中值 + 中值微调（车直道往哪边偏就往反方向调几个数） |
-| `SERVO_DUTY_RANGE` | **180** | 最大打角偏移（465±180 ≈ 0.57~1.29 ms） |
+| `Servo_MID` / `SERVO_TRIM` | **464** / 0 | 中值 + 中值微调（车直道往哪边偏就往反方向调几个数）。实测 465 整体偏右，定 464 |
+| `SERVO_DUTY_RANGE_L` | **70** | 向左最大偏移 → 占空比上限 **534** |
+| `SERVO_DUTY_RANGE_R` | **69** | 向右最大偏移 → 占空比下限 **395** |
+| `SERVO_DUTY_RANGE` | 70 | 兼容旧名字（= L）。**已不再使用**，新代码请用 `_L` / `_R` |
+
+> **机械行程必须按实测填。** 这版把左右拆成两个宏，是因为实测舵机只能到 **395 ~ 534**（中值 464，左 +70、右 −69，左右不对称）。`Servo_Set_Duty()` 里对任何指令都做左右分别限幅，超出范围一律夹回来，所以舵机不会再顶在机械死点上堵转发烫。换舵机/改连杆后要重新量一遍：
+>
+> 1. 把车架空，`Control_REMAIN.h` 里 `CONTROL_SPEED_LOOP_EN` 改 0、`CONTROL_DUTY_BASE` 改 0（轮子不转）；
+> 2. 临时在 `SATA_MAIN()` 里 `Servo_Init();` 之后写 `Servo_Set_Duty(464+80);`，烧进去听声音——**开始嗡嗡响、发烫的那个值就是死点**；
+> 3. 往回收 8~10 个数写入 `SERVO_DUTY_RANGE_L`；再用 `Servo_Set_Duty(464-80);` 同样测 `_R`；
+> 4. 中值：`Servo_Set_Duty(464);` 时前轮应正对车头，偏了就把 `Servo_MID` 加减 1~2，或改 `SERVO_TRIM`。
 | `SERVO_DEAD_ZONE` | **2.0** | 死区：偏差 < 2 像素不动作，治直道抖动 |
 | `SERVO_KNEE` | **15.0** | 拐点：15 像素以内小增益，以外大增益 |
 | `SERVO_KP_NEAR` | **1.0** | 小偏差增益（原来统一 3.0 太猛） |
@@ -239,7 +248,7 @@ v_后右 = 基础速度 × (1 - ratio)            // 内侧
 | `code/SATA_MAIN.c` | **AI 生成** | 主程序：外设初始化顺序 + 主循环 + 单帧处理编排 |
 | `user/cpu0_main.c` | **AI 精简** | 只保留 `clock_init` + `debug_init` + `SATA_MAIN()` |
 | `user/isr.c` | **AI 加一行** | `cc60_pit_ch0_isr` 中调用 `Control_Tick()` |
-| `code/LED_REMAIN.c/.h`、`code/LCD_REMAIN.c/.h`，以及 `Motor_REMAIN.h` 的引脚宏、`Servo_REMAIN.h` 的舵机中值 | **作者原创** | 与 AI 无关 |
+| `code/LCD_REMAIN.c/.h`，以及 `Motor_REMAIN.h` 的引脚宏、`Servo_REMAIN.h` 的舵机中值 | **作者原创** | 与 AI 无关（`LED_REMAIN.c/.h` 已按要求删除） |
 | `libraries/**` | 逐飞 TC264 开源库 | GPL 3.0，原样未改 |
 
 ### 7.2 作者亲自完成的部分

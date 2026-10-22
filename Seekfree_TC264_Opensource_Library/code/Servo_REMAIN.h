@@ -16,13 +16,18 @@
 #define CODE_SERVO_REMAIN_H_
 #include "zf_common_headfile.h"
 
-#define Servo_MID               (465)                   // 舵机中值 偏大向左转，偏小向右转
+#define Servo_MID               (464)                   // 舵机中值（实测螺杆有公差，465 整体偏右，定为 464）；偏大向左转，偏小向右转
 #define SERVO_TRIM              (0)                     // 中值微调：直道上车往哪边偏，就往反方向调几个数
 #define SERVO_PWM_PIN           ATOM0_CH1_P33_9         // 舵机 PWM 引脚
 #define SERVO_PWM_FREQ          (50)                    // 舵机固定 50Hz
 
 /* ======================== 分段打角参数 ======================== */
-#define SERVO_DUTY_RANGE        (180)                   // 左右最大打角对应的占空比偏移（465±180 即约 0.57~1.29ms）
+/* ---- 机械行程（实测：占空比只有 395 ~ 534，超出就顶死点堵转、发烫）----
+ * 中值 464：向左最多 +70（=534），向右最多 -69（=395）。左右不对称，所以拆成两个宏。
+ * 原来是统一的 180（464±180 = 284~644），指令能推到机械死点外面去，这是"舵机卡死"的根源。 */
+#define SERVO_DUTY_RANGE_L      (70)                    // 向左最大偏移：464+70 = 534
+#define SERVO_DUTY_RANGE_R      (69)                    // 向右最大偏移：464-69 = 395
+#define SERVO_DUTY_RANGE        (SERVO_DUTY_RANGE_L)    // 兼容旧名字（取较大一侧）
 #define SERVO_DEAD_ZONE         (2.0f)                  // 死区：偏差小于 2 像素不动，专门治直道抖动
 #define SERVO_KNEE              (15.0f)                 // 拐点：偏差 15 像素以内用小增益，以外用大增益
 #define SERVO_KP_NEAR           (1.0f)                  // 小偏差增益（直道柔和，原来统一 3.0 太猛）

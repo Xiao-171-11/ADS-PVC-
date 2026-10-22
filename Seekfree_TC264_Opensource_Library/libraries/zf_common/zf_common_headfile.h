@@ -37,7 +37,6 @@
 #define _zf_common_headfile_h_
 
 //===================================================C”Ô—‘ ∫Ø ˝ø‚===================================================
-#include <LED_REMAIN.h>
 #include "math.h"
 #include "stdio.h"
 #include "stdint.h"
@@ -121,7 +120,6 @@
 
 //=====================================================”√ªß≤„======================================================
 #include "SATA_MAIN.h"
-#include "LED_REMAIN.h"
 #include "Motor_REMAIN.h"
 #include "LCD_REMAIN.h"
 #include "PIT_REMAIN.h"
