@@ -258,8 +258,10 @@ static void bedline_draw_line(const bedline_struct *line, uint16 color)
 //-------------------------------------------------------------------------------------------------------------------
 void Bedline_Show_On_TFT180(void)
 {
-    bedline_draw_line(&bedline_left,  RGB565_RED);
+#if (1 == CAMERA_DIS_IMAGE)
+    bedline_draw_line(&bedline_left,  RGB565_RED);      // 基线画在图像上，图像关了就没有意义
     bedline_draw_line(&bedline_right, RGB565_BLUE);
+#endif
 
     tft180_set_color(RGB565_WHITE, RGB565_BLACK);
     tft180_show_string(0, CAMERA_INFO_Y3, "K");                  // 基线斜率

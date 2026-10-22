@@ -28,15 +28,26 @@
 #define SERVO_DUTY_RANGE_L      (70)                    // 向左最大偏移：464+70 = 534
 #define SERVO_DUTY_RANGE_R      (69)                    // 向右最大偏移：464-69 = 395
 #define SERVO_DUTY_RANGE        (SERVO_DUTY_RANGE_L)    // 兼容旧名字（取较大一侧）
-#define SERVO_DEAD_ZONE         (2.0f)                  // 死区：偏差小于 2 像素不动，专门治直道抖动
-#define SERVO_KNEE              (15.0f)                 // 拐点：偏差 15 像素以内用小增益，以外用大增益
-#define SERVO_KP_NEAR           (1.0f)                  // 小偏差增益（直道柔和，原来统一 3.0 太猛）
-#define SERVO_KP_FAR            (2.5f)                  // 大偏差增益（弯道有力）
+#define SERVO_DEAD_ZONE         (3.0f)
+#define SERVO_KNEE              (8.0f)
+#define SERVO_KP_NEAR           (1.2f)
+#define SERVO_KP_FAR            (4.0f)
+#define SERVO_ERR_FILTER        (0.65f)                 // 偏差低通：0.65*本次 + 0.35*上次，压掉直道上的逐帧抖动
+#define SERVO_HOLD_MIN_PEAK     (30.0f)                 // 出弯保持的最小峰值：没真进过弯就不许锁
 #define SERVO_KD                (2.0f)                  // 微分阻尼：抑制来回摆，0 = 关掉
+/* ---- exit hold ---------------- */
+#define SERVO_EXIT_HOLD_EN      (1)                     // 1-open exit hold
+#define SERVO_HOLD_TICKS        (40)                    // hold time: 40 x 5ms = 0.2 s
+#define SERVO_HOLD_DECAY        (1)                     // 1-keep then return to center gradually over the hold window / 0-hold constant
+#define SERVO_ARM_ERROR         (30.0f)
+#define SERVO_ARM_MIN_TICKS     (10)                    // need 10 ticks(50ms) to arm
+#define SERVO_RELEASE_ERROR     (15.0f)                 // |error| below this = just left corner
+
 #define SERVO_REVERSE           (0)                     // 1-左右打角反了就把这里改成 1
 
 void Servo_Init     (void);                             // 初始化舵机 PWM
 void Servo_Set_Duty (int32 duty);                       // 直接输出占空比（内部限幅）
-void Servo_Set_Turn (float error);                      // 按中线偏差打角
+void Servo_Set_Turn (float error);
+void Servo_Clear_Hold (void);                           // 立刻取消出弯保持（路口用）                      // 按中线偏差打角
 
 #endif /* CODE_SERVO_REMAIN_H_ */

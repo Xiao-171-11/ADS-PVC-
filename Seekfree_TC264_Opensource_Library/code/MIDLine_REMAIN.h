@@ -30,6 +30,15 @@
 
 #define MIDLINE_MIN_ROWS        (5)                     // 参与加权计算的最少行数
 #define MIDLINE_ONE_SIDE_SCALE  (0.50f)                 // 只有单侧边线时用赛道半宽推算，权重打 5 折
+/* ---- 十字路口：横臂张开，赛道"宽度"突变，中线会跑到赛道外 ---- */
+#define MIDLINE_CROSS_EN            (1)                 // 1-开路口识别（路口强制直行）
+#define MIDLINE_CROSS_WIDTH_RATIO   (1.25f)             // 实测宽度 > 学习宽度 x 1.25 判为路口
+#define MIDLINE_CROSS_NARROW_RATIO  (1.10f)             // 行数骤减时也要求宽度至少涨到 1.10 倍（防止弯道丢边误判）
+#define MIDLINE_CROSS_FEW_ROWS      (12)                // 有效行少于它也算路口（边线断掉）
+#define MIDLINE_CROSS_CENTER_TOL    (30.0f)             // 中线偏出这个范围就不按路口处理（不是正对路口）
+#define MIDLINE_CROSS_LOCK_TICKS    (40)                // 判定后锁定帧数（约 0.4 s）
+#define MIDLINE_CROSS_EXIT_TICKS    (5)                 // 连续这么多帧不像路口就提前解锁
+
 #define MIDLINE_DEFAULT_WIDTH   (110.0f)                // 尚未统计出赛道宽度时使用的默认宽度（像素）
 
 /* ================================ 数据结构 ================================ */
@@ -45,6 +54,7 @@ typedef struct
     float  center;                                      // 滤波后的中线（浮点，画图/调试用）
     float  error;                                       // 偏差 = center - MT9V03X_W/2（正=偏右）
     float  width;                                       // 本帧加权平均赛道宽度（像素）
+    uint8  cross;                                       // 1-本帧判为十字路口（已强制直行）
     uint8  line[MT9V03X_H];                             // mid_line_list：每一行的中线列
 } midline_struct;
 

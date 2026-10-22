@@ -22,6 +22,9 @@
 
 midline_struct midline_info;                            // 中线计算结果
 uint8          mid_weight_list[MT9V03X_H];              // mid_weight_list[row]：每行的中线权重
+static uint16 cross_hold  = 0;                          // 路口锁定剩余帧数
+static uint8  cross_hit   = 0;                          // 连续可疑帧数
+static uint8  cross_clean = 0;                          // 连续非路口帧数
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     图像坐标 -> TFT180 显示坐标（与 tft180_show_gray_image 的缩放一致）
@@ -201,29 +204,88 @@ uint8 Find_MIDLine(void)
 
     uint8 mid_line = (uint8)(weight_midline_sum / weight_sum);
 
-    // 4. 互补滤波（一阶低通）：本次值占 MIDLINE_FILTER_NEW，上次占 MIDLINE_FILTER_OLD
-    midline_info.num            = num;
-    midline_info.weight_sum     = weight_sum;
-    midline_info.mid_line       = mid_line;                                 // 滤波前
-    midline_info.center         = (midline_info.last_mid_line * MIDLINE_FILTER_OLD) +
-                                  ((float)mid_line * MIDLINE_FILTER_NEW);   // 滤波后
-    midline_info.last_mid_line  = midline_info.center;                      // 更新滤波状态
-    midline_info.mid_line_value = (uint8)(midline_info.center + 0.5f);      // 四舍五入成整数输出
-    midline_info.error          = midline_info.center - ((float)MT9V03X_W * 0.5f);
+    // 4. 互补滤波（一阶低通）+ 路口判定
+    float center_now = (midline_info.last_mid_line * MIDLINE_FILTER_OLD) +
+                       ((float)mid_line * MIDLINE_FILTER_NEW);
+    float width_now  = (sum_w_both > 0.0f) ? (sum_w_width / sum_w_both) : (width_ref);
+    float dev_now    = center_now - ((float)MT9V03X_W * 0.5f);
 
-    midline_info.row_start = (uint8)row_start;
-    midline_info.row_end   = (uint8)row_end;
+    midline_info.num        = num;
+    midline_info.weight_sum = weight_sum;
+    midline_info.mid_line   = mid_line;
+    midline_info.row_start  = (uint8)row_start;
+    midline_info.row_end    = (uint8)row_end;
 
-    if(sum_w_both > 0.0f)                           // 只用“两侧都有效”的行更新赛道宽度
+#if (1 == MIDLINE_CROSS_EN)
     {
-        midline_info.width = sum_w_width / sum_w_both;
+        uint8 suspect = 0;
+
+        if(width_now > (width_ref * MIDLINE_CROSS_WIDTH_RATIO))     // 主判据：赛道突然变宽 = 路口横臂
+        {
+            suspect = 1;
+        }
+        else if((num < MIDLINE_CROSS_FEW_ROWS) &&
+                (width_now > (width_ref * MIDLINE_CROSS_NARROW_RATIO)))   // 次判据：行数骤减 + 宽度也在涨
+        {
+            suspect = 1;
+        }
+        if((dev_now > MIDLINE_CROSS_CENTER_TOL) || (dev_now < -MIDLINE_CROSS_CENTER_TOL))
+        {
+            suspect = 0;                                            // 中线已经偏出中心：是弯道不是路口
+        }
+
+        if(suspect)
+        {
+            if(cross_hit < 3)
+            {
+                cross_hit ++;
+            }
+            cross_clean = 0;
+        }
+        else
+        {
+            cross_hit = 0;
+            if(cross_clean < 255)
+            {
+                cross_clean ++;
+            }
+        }
+
+        if(cross_hit >= 2)                                          // 连续两帧可疑才认定路口
+        {
+            cross_hold  = MIDLINE_CROSS_LOCK_TICKS;
+            cross_clean = 0;
+        }
+        if(cross_hold > 0)
+        {
+            cross_hold --;
+            if((0 == cross_hit) && (cross_clean >= MIDLINE_CROSS_EXIT_TICKS))
+            {
+                cross_hold = 0;                                     // 连续几帧恢复正常：提前解锁
+            }
+        }
     }
-    else
+    midline_info.cross = (cross_hold > 0) ? (1) : (0);
+#else
+    midline_info.cross = 0;
+#endif
+
+    if(midline_info.cross)                                          // 路口：强制走直线
     {
-        midline_info.width = width_ref;             // 本帧全是单侧，沿用上一帧宽度
+        midline_info.center         = (float)MIDLINE_DEFAULT_CENTER;
+        midline_info.mid_line_value = (uint8)MIDLINE_DEFAULT_CENTER;
+        midline_info.error          = 0.0f;
+        midline_info.width          = width_ref;                    // 路口不学赛道宽度
+        midline_info.valid          = 1;
+        return (0);                                                 // 不更新 last_mid_line
     }
 
-    midline_info.valid = 1;
+    midline_info.center         = center_now;
+    midline_info.last_mid_line  = center_now;
+    midline_info.mid_line_value = (uint8)(center_now + 0.5f);
+    midline_info.error          = dev_now;
+    midline_info.width          = width_now;
+    midline_info.valid          = 1;
     return (0);
 }
 
@@ -236,7 +298,8 @@ uint8 Find_MIDLine(void)
 //-------------------------------------------------------------------------------------------------------------------
 void MIDLine_Show_On_TFT180(void)
 {
-    if(midline_info.valid)
+#if (1 == CAMERA_DIS_IMAGE)
+    if(midline_info.valid)                              // 绿点画在图像上，图像关了就没有意义
     {
         for(int row = (int)midline_info.row_start; row >= (int)midline_info.row_end; row --)
         {
@@ -253,10 +316,12 @@ void MIDLine_Show_On_TFT180(void)
             }
         }
     }
+#endif
 
     tft180_set_color(RGB565_WHITE, RGB565_BLACK);
     tft180_show_string(0, CAMERA_INFO_Y4, "C");                                     // 滤波后的中线值
     tft180_show_int(14, CAMERA_INFO_Y4, (int32)midline_info.mid_line_value, 3);
     tft180_show_string(64, CAMERA_INFO_Y4, "E");                                    // 偏差
     tft180_show_float(78, CAMERA_INFO_Y4, (double)midline_info.error, 2, 1);
+    tft180_show_string(120, CAMERA_INFO_Y4, (1 == midline_info.cross) ? ("X") : (" "));   // X = 路口直行
 }

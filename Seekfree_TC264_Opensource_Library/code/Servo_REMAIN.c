@@ -17,6 +17,14 @@
 #include "Servo_REMAIN.h"
 
 static float servo_last_error = 0.0f;                   // 上一次的偏差（微分项用）
+static float  servo_hold_out = 0.0f;
+static uint16 servo_hold_cnt = 0;
+static uint16 servo_big_cnt  = 0;
+static uint8  servo_armed    = 0;
+static float  servo_peak_abs = 0.0f;
+static float  servo_peak_out = 0.0f;
+static float  servo_err_f    = 0.0f;                   // 低通后的偏差
+static uint8  servo_deep     = 0;                      // 本弯峰值够大（真进过弯）
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     舵机初始化
@@ -61,33 +69,131 @@ void Servo_Set_Duty(int32 duty)
 // 备注信息     1. 直道小偏差只给小打角，弯道大偏差给大打角，避免“直道摆、弯道打不动”
 //              2. KD 用相邻两帧偏差的差做阻尼，能明显压住来回摆
 //-------------------------------------------------------------------------------------------------------------------
+void Servo_Clear_Hold(void)
+{
+    servo_hold_cnt = 0;
+    servo_armed    = 0;
+    servo_big_cnt  = 0;
+    servo_deep     = 0;
+}
+
 void Servo_Set_Turn(float error)
 {
     float abs_error = 0.0f;
+    float p_out     = 0.0f;
     float out       = 0.0f;
 
 #if (1 == SERVO_REVERSE)
     error = -error;
 #endif
 
+    /* 偏差低通：直道上边线逐帧抖动 1~3 像素，不过滤就会被高增益放大成来回打角 */
+    error = (SERVO_ERR_FILTER * error) + ((1.0f - SERVO_ERR_FILTER) * servo_err_f);
+    servo_err_f = error;
+
     abs_error = (error > 0.0f) ? (error) : (-error);
 
-    if(abs_error <= SERVO_DEAD_ZONE)                    // 死区：直道上的小抖动不动作
+    if(abs_error <= SERVO_DEAD_ZONE)
     {
-        out = 0.0f;
+        p_out = 0.0f;
     }
-    else if(abs_error <= SERVO_KNEE)                    // 小偏差：柔和
+    else if(abs_error <= SERVO_KNEE)
     {
-        out = SERVO_KP_NEAR * error;
+        p_out = SERVO_KP_NEAR * error;
     }
-    else                                                // 大偏差：有力
+    else
     {
         float sign = (error > 0.0f) ? (1.0f) : (-1.0f);
-        out = sign * ((SERVO_KP_NEAR * SERVO_KNEE) + (SERVO_KP_FAR * (abs_error - SERVO_KNEE)));
+        p_out = sign * ((SERVO_KP_NEAR * SERVO_KNEE) + (SERVO_KP_FAR * (abs_error - SERVO_KNEE)));
     }
 
-    out += SERVO_KD * (error - servo_last_error);       // 微分阻尼，抑制过冲和来回摆
+    out = p_out + (SERVO_KD * (error - servo_last_error));
     servo_last_error = error;
 
-    Servo_Set_Duty((int32)((float)(Servo_MID + SERVO_TRIM) - out));   // 赛道偏右 -> 占空比变小 -> 向右转
+#if (1 == SERVO_EXIT_HOLD_EN)
+    if(abs_error >= SERVO_ARM_ERROR)
+    {
+        if(0 == servo_big_cnt)                          /* new run of large error: restart peak */
+        {
+            servo_peak_abs = abs_error;
+            servo_peak_out = p_out;
+        }
+        if(servo_big_cnt < 60000)
+        {
+            servo_big_cnt ++;
+        }
+        if(servo_big_cnt >= SERVO_ARM_MIN_TICKS)
+        {
+            servo_armed = 1;
+        }
+        if(abs_error > servo_peak_abs)
+        {
+            servo_peak_abs = abs_error;
+            servo_peak_out = p_out;
+        }
+        if(servo_peak_abs >= SERVO_HOLD_MIN_PEAK)
+        {
+            servo_deep = 1;
+        }
+        servo_hold_cnt = 0;                             /* back into a corner: drop the hold */
+    }
+    else
+    {
+        servo_big_cnt = 0;
+        if(1 == servo_armed)
+        {
+            if(abs_error > SERVO_RELEASE_ERROR)         /* still in the corner: track the peak */
+            {
+                if(abs_error > servo_peak_abs)
+                {
+                    servo_peak_abs = abs_error;
+                    servo_peak_out = p_out;
+                }
+            }
+            else if((0 == servo_hold_cnt) && (1 == servo_deep))   /* just left a real corner: latch the peak */
+            {
+                servo_hold_out = servo_peak_out;
+                if(servo_hold_out >  (float)SERVO_DUTY_RANGE_L)
+                {
+                    servo_hold_out =  (float)SERVO_DUTY_RANGE_L;
+                }
+                if(servo_hold_out < -(float)SERVO_DUTY_RANGE_R)
+                {
+                    servo_hold_out = -(float)SERVO_DUTY_RANGE_R;
+                }
+                servo_hold_cnt = SERVO_HOLD_TICKS;
+                servo_peak_abs = 0.0f;
+                servo_deep     = 0;
+            }
+        }
+    }
+
+    if(servo_hold_cnt > 0)
+    {
+        /* 误差已经反过来了：车被往另一边推，继续锁着旧打角只会推它出去，立即释放 */
+        if(((error * servo_hold_out) < 0.0f) && (abs_error > SERVO_RELEASE_ERROR))
+        {
+            servo_hold_cnt = 0;
+            servo_armed    = 0;
+            servo_big_cnt  = 0;
+            servo_deep     = 0;
+        }
+    }
+
+    if(servo_hold_cnt > 0)
+    {
+        out = servo_hold_out;
+#if (1 == SERVO_HOLD_DECAY)
+        out = servo_hold_out * ((float)servo_hold_cnt / (float)SERVO_HOLD_TICKS);
+#endif
+        servo_hold_cnt --;
+        if(0 == servo_hold_cnt)
+        {
+            servo_armed = 0;
+        }
+    }
+#endif
+
+    Servo_Set_Duty((int32)((float)(Servo_MID + SERVO_TRIM) - out));
 }
+

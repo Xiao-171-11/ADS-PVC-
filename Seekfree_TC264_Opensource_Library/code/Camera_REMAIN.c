@@ -186,9 +186,12 @@ void Camera_Process_Once(void)
         threshold = 128;
     }
 
-    // 3. 按大津法阈值二值化并显示
+    // 3. 按大津法阈值二值化
     Camera_Binarize(threshold);
-    Camera_LCD_Dis_Show();
+
+#if (1 == CAMERA_DIS_IMAGE)
+    Camera_LCD_Dis_Show();                              // 图像显示；CAMERA_DIS_IMAGE=0 时整段跳过
+#endif
 
 #if (1 == CAMERA_DIS_INFO)
     tft180_set_color(0xFFFF, 0x0000);

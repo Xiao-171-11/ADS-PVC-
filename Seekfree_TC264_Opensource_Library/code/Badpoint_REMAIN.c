@@ -178,8 +178,10 @@ static void badpoint_draw_cross(const badpoint_struct *pt, uint16 color)
 //-------------------------------------------------------------------------------------------------------------------
 void Badpoint_Show_On_TFT180(void)
 {
-    badpoint_draw_cross(&badpoint_left,  RGB565_RED);
+#if (1 == CAMERA_DIS_IMAGE)
+    badpoint_draw_cross(&badpoint_left,  RGB565_RED);   // 十字画在图像上，图像关了就没有意义
     badpoint_draw_cross(&badpoint_right, RGB565_BLUE);
+#endif
 
     tft180_set_color(RGB565_WHITE, RGB565_BLACK);
     tft180_show_string(0, CAMERA_INFO_Y2, "BP");                 // 基点列号

@@ -56,7 +56,7 @@ static void SATA_Frame_Process(void)
     Badpoint_Show_On_TFT180();                          // 基点十字 + 基点列号
     Bedline_Show_On_TFT180();                           // 基线直线 + 基线斜率
     MIDLine_Show_On_TFT180();                           // 中线（绿色）+ 中线值 + 偏差
-    Control_Show_On_TFT180();                           // 左上角轮速（6x8 小字）
+    Control_Show_On_TFT180();                           // 最底部一行轮速（6x8 小字，y=148，不压图像）
 }
 
 //-------------------------------------------------------------------------------------------------------------------

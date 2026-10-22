@@ -18,10 +18,20 @@
 #define CAMERA_DIS_INFO         (1)                     // 1-在图像下方显示当前阈值  0-不显示
 
 /* 屏幕下方信息区行坐标（8x16 字体，最后一行 y+15 必须小于 tft180_height_max=160） */
-#define CAMERA_INFO_Y1          (CAMERA_DIS_H + 4)      // 84  阈值 TH
-#define CAMERA_INFO_Y2          (CAMERA_DIS_H + 22)     // 102 基点 BP
-#define CAMERA_INFO_Y3          (CAMERA_DIS_H + 40)     // 120 斜率 K
-#define CAMERA_INFO_Y4          (CAMERA_DIS_H + 58)     // 138 中线 C / 偏差 E
+/* 图像总开关：1-屏幕上方显示二值化图像（含红线/蓝线/绿点叠加）
+                0-不显示图像，只显示参数。省掉每帧 126x80 = 10080 个像素的刷屏时间，
+                  帧率和控制周期都会更宽裕（调试期建议 0，比赛前想看画面再改回 1）   */
+#define CAMERA_DIS_IMAGE        (0)
+
+/* 参数区起点：显示图像时从图像正下方开始（y=80），不显示图像时直接从屏幕顶部开始（y=0） */
+#define CAMERA_INFO_TOP         ((1 == CAMERA_DIS_IMAGE) ? (CAMERA_DIS_H) : (0))
+
+#define CAMERA_INFO_Y1          (CAMERA_INFO_TOP + 2)      // 阈值 TH
+#define CAMERA_INFO_Y2          (CAMERA_INFO_TOP + 18)     // 左右基点 BP
+#define CAMERA_INFO_Y3          (CAMERA_INFO_TOP + 34)     // 基线斜率 K
+#define CAMERA_INFO_Y4          (CAMERA_INFO_TOP + 50)     // 中线 C / 偏差 E
+#define CAMERA_INFO_Y5          (CAMERA_INFO_TOP + 68)     // 轮速 V/R（6x8 小字）
+#define CAMERA_INFO_Y6          (CAMERA_INFO_TOP + 84)     // 前馈标定结果 gL/gR bL/bR（6x8 小字）
 /* base_image：二值化结果 0-黑(赛道黑线)  255-白(背景)                     */
 extern uint8 base_image[MT9V03X_H][MT9V03X_W];
 
