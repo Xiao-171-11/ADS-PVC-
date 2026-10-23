@@ -5,8 +5,8 @@
  *      Author: Freed
  */
 #include "Camera_REMAIN.h"
-uint8 base_image[MT9V03X_H][MT9V03X_W];
-uint8 camera_threshold = 128;                               // 本帧二值化阈值，Camera_Process_Once() 每帧刷新                 // 二值化结果：0-黑(黑线)  255-白(背景)
+uint8 base_image[MT9V03X_H][MT9V03X_W];                      // 二值化结果：0-黑(黑线)  255-白(背景)
+uint8 camera_threshold = 128;                               // 本帧二值化阈值，Camera_Process_Once() 每帧刷新
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     摄像头 + TFT180 初始化
 // 参数说明     void
@@ -118,8 +118,7 @@ uint8 Camera_Otsu_Threshold(const uint8 *image, uint32 width, uint32 height)
 // 函数简介     按给定阈值把 mt9v03x_image 二值化到 base_image（0 / 255）
 // 参数说明     threshold       二值化阈值，由 Camera_Otsu_Threshold() 给出
 // 返回参数     void
-// 使用示例     camera_threshold = threshold;                       // 存一份给斑马线模块（复用大津法结果，不重复算）
-    Camera_Binarize(Camera_Otsu_Threshold(mt9v03x_image[0], MT9V03X_W, MT9V03X_H));
+// 使用示例     Camera_Binarize(Camera_Otsu_Threshold(mt9v03x_image[0], MT9V03X_W, MT9V03X_H));
 // 备注信息     1. 灰度 > threshold 判为白(255)，否则判为黑(0)——与屏幕驱动 threshold 分支一致
 //              2. 行列顺序：base_image 是 [MT9V03X_H][MT9V03X_W]，行循环用 H，列循环用 W
 //                 写反（i<W 当行、j<H 当列）会越界写 12716 字节，还会漏掉 8160 个像素
@@ -188,7 +187,8 @@ void Camera_Process_Once(void)
         threshold = 128;
     }
 
-    // 3. 按大津法阈值二值化
+    // 3. 存一份阈值给斑马线模块（复用大津法结果，不重复算），然后按阈值二值化
+    camera_threshold = threshold;
     Camera_Binarize(threshold);
 
 #if (1 == CAMERA_DIS_IMAGE)
