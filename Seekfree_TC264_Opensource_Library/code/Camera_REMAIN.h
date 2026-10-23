@@ -34,6 +34,7 @@
 #define CAMERA_INFO_Y6          (CAMERA_INFO_TOP + 84)     // 前馈标定结果 gL/gR bL/bR（6x8 小字）
 /* base_image：二值化结果 0-黑(赛道黑线)  255-白(背景)                     */
 extern uint8 base_image[MT9V03X_H][MT9V03X_W];
+extern uint8 camera_threshold;                              // 本帧大津法算出的阈值（斑马线模块要用，别重复算）
 
 /* ================================ 接口声明 ================================ */
 void    Camera_LCD_Init          (void);                                            // 摄像头 + TFT180 初始化

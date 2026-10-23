@@ -128,6 +128,7 @@
 #include "Badpoint_REMAIN.h"
 #include "Bedline_REMAIN.h"
 #include "MIDLine_REMAIN.h"
+#include "Zebra_REMAIN.h"
 #include "Control_REMAIN.h"
 #include "Encoder_REMAIN.h"
 //=====================================================”√ªß≤„======================================================

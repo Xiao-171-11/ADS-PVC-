@@ -239,8 +239,13 @@ void Control_Tick(void)
 
     control_tick_cnt ++;
 
-    // 1. 发车延时：上电后先别动，方便架起来调试
+    // 1. 发车条件：上电先等 CONTROL_START_DELAY_MS（顺便测编码器噪声底），之后由斑马线决定走不走
+#if (1 == ZEBRA_EN)
+    if((0 == zebra_info.state) || (2 == zebra_info.state) ||
+       ((control_tick_cnt * CONTROL_PERIOD_MS) < CONTROL_START_DELAY_MS))
+#else
     if((control_tick_cnt * CONTROL_PERIOD_MS) < CONTROL_START_DELAY_MS)
+#endif
     {
         /* 这 3 s 电机是断电的、轮子静止，任何脉冲都是电气干扰，正好拿来测噪声底 */
         raw_l = Encoder_Get_Count(0);

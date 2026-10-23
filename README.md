@@ -368,6 +368,44 @@ error     0    3    5    8   12   16   20   22.8  >=22.8
 
 屏幕 `C` 行最右边出现 **`X`** 就表示这一帧判成路口、正在直行。
 
+### 斑马线起停（起点 / 终点）
+
+赛道的黑色斑马线既是起点也是终点：**上电后看到斑马线才发车，跑完一圈再看到斑马线就停**。
+
+**识别方法**（`Zebra_REMAIN.c`）：在二值图的 **82~118 行**（车头前 0.25~0.9 m）横向扫行，数"宽度 2~22 px 的暗游程"—— 斑马线是十几根窄黑条，普通赛道边线是两根宽黑带、且不在这一段密集出现。
+
+| 判据 | 阈值（`Zebra_REMAIN.h`） | 说明 |
+|---|---|---|
+| 单行黑条数 | `ZEBRA_MIN_BARS = 5` | 一行里至少 5 根窄黑条 |
+| 单行白占比 | `ZEBRA_WHITE_MIN = 0.25` | 白底要够多，排除全是黑条的阴影 |
+| 条宽范围 | `ZEBRA_BAR_MIN_PX = 2` ~ `ZEBRA_BAR_MAX_PX = 22` | 太细是噪声，太粗是赛道边线 |
+| 命中行数 | `ZEBRA_MIN_ROWS = 3` / `ZEBRA_HIT_FRAMES = 2` | 连续两帧命中才算 |
+
+**状态机**（三态）：
+
+| 状态 | 含义 | 转换条件 |
+|---|---|---|
+| 0 | 等待发车（电机断电、舵机回中） | `hit_cnt >= 2` → 1 |
+| 1 | 行驶中 | `clear_cnt >= 25` **且** `run_cnt >= 150` 先置 `armed = 1`；之后 `armed && hit_cnt >= 2` → 2 |
+| 2 | 到达终点（锁死） | 只有重新上电才回 0 |
+
+> **`armed` 为什么必须有**：刚发车时车还压在斑马线上，不先"跑过去并看清一段时间"就会被自己判成终点停死。`ZEBRA_RUN_MIN_FRAMES = 150`（约 1.5 s）与 `ZEBRA_CLEAR_FRAMES = 25` 就是这段"跑开"的门槛。
+
+**接入位置**：
+
+- `Control_REMAIN.c` 的发车条件：`#if (1 == ZEBRA_EN) if((0 == zebra_info.state) || (2 == zebra_info.state) || (发车延时未到))` —— 等待期间电机断电、舵机回中，同时**顺手测编码器噪声底**（原来那 1 s 延时干的活一点没丢）；
+- `SATA_MAIN.c`：`Zebra_Init()` 在 `MIDLine_Init()` 之后；`Zebra_Scan()` 在 `Camera_Process_Once()` 之后（必须先有二值图和阈值）；`Zebra_Show_On_TFT180()` 在显示段；
+- 阈值复用大津法结果：`Camera_REMAIN.c` 每帧把 `threshold` 存进 `camera_threshold`，斑马线模块直接读，**不重复算一遍**。
+
+**屏幕**：第 1 行最右边一个字 —— 黄 `W` 等待发车 / 绿 `R` 行驶中 / 红 `F` 到达终点。
+
+**调法**：
+
+- 起步不触发（车不动） → `ZEBRA_MIN_BARS` 5 → **4**，或 `ZEBRA_MIN_ROWS` 3 → **2**；
+- 跑起来被误判成终点停了 → `ZEBRA_RUN_MIN_FRAMES` 150 → **300**，`ZEBRA_CLEAR_FRAMES` 25 → **50**；
+- 终点没停 → `ZEBRA_RUN_MIN_FRAMES` 150 → **80**，`ZEBRA_MIN_BARS` 5 → **4**；
+- 完全不想用斑马线 → `ZEBRA_EN` 改 **0**（回到纯 1 s 延时发车、不停车）。
+
 ### 屏幕上能看到什么
 
 | 位置 | 内容 |
@@ -452,6 +490,7 @@ v_后右 = 基础速度 × (1 - ratio)            // 内侧
 | `user/cpu0_main.c` | **AI 精简** | 只保留 `clock_init` + `debug_init` + `SATA_MAIN()` |
 | `user/isr.c` | **AI 加一行** | `cc60_pit_ch0_isr` 中调用 `Control_Tick()` |
 | `code/LCD_REMAIN.c/.h`，以及 `Motor_REMAIN.h` 的引脚宏、`Servo_REMAIN.h` 的舵机中值 | **作者原创** | 与 AI 无关（`LED_REMAIN.c/.h` 已按要求删除） |
+| `Zebra_REMAIN.c/.h` | AI 生成（约 9 KB） | 斑马线起停识别与三态状态机 |
 | `libraries/**` | 逐飞 TC264 开源库 | GPL 3.0，原样未改 |
 
 ### 7.2 作者亲自完成的部分

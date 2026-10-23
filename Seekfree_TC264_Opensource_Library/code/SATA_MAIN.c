@@ -27,6 +27,7 @@ static void SATA_Init(void)
     Badpoint_Init();                                    // 清空边缘基点信息
     Bedline_Init();                                     // 清空边缘基线信息
     MIDLine_Init();                                     // 清空中线信息
+    Zebra_Init();                                       // 斑马线起停状态机
 
     Encoder_Init();                                     // 左右编码器
     Servo_Init();                                       // 舵机 PWM（回中）
@@ -48,6 +49,7 @@ static void SATA_Frame_Process(void)
     mt9v03x_finish_flag = 0;                            // 清标志，等下一帧
 
     Camera_Process_Once();                              // 大津法阈值 -> 二值化 -> 显示二值图像
+    Zebra_Scan();                                       // 斑马线判定（必须在二值化之后）
 
     Find_Badpoint(base_image[0], MT9V03X_W, MT9V03X_H); // 边缘基点
     Find_Bedline (base_image[0], MT9V03X_W, MT9V03X_H); // 边缘基线
@@ -56,6 +58,7 @@ static void SATA_Frame_Process(void)
     Badpoint_Show_On_TFT180();                          // 基点十字 + 基点列号
     Bedline_Show_On_TFT180();                           // 基线直线 + 基线斜率
     MIDLine_Show_On_TFT180();                           // 中线（绿色）+ 中线值 + 偏差
+    Zebra_Show_On_TFT180();                             // 起停状态 W/R/F
     Control_Show_On_TFT180();                           // 最底部一行轮速（6x8 小字，y=148，不压图像）
 }
 
