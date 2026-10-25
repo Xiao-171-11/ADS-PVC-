@@ -73,10 +73,36 @@
  * 舵机是机械件，一帧之内从 +69 跳到 -70 会听到"咔"一声并且大电流，长期这么干会烧齿轮。 */
 #define SERVO_SLEW_MAX          (14.0f)                 // 每个 5ms 控制周期最多变化多少占空比（69/14 ≈ 5 拍打满）
 
+/* ======================== 分档打角（实车标定值） ========================
+ * 实车要求：舵机不要连续微调，直接给固定的几个档位，靠"档位 + 停留时间"转向。
+ *   直道调姿：440（左小）/ 474（右小）
+ *   弯道转向：418（左大）/ 500（右大）
+ *   中位/路口：464（绝不转弯）
+ * 方向：占空比小 = 前轮向左，占空比大 = 前轮向右（实测，中值 464）。
+ *
+ * 滞环（hysteresis）：进档用 IN 阈值，退档用 OUT 阈值，OUT < IN。
+ *   没有滞环的话，需求在阈值附近抖动时会 464/440/464/440 反复打，舵机会"哒哒"响并且车头摆。
+ * 停留（dwell）：每次换档后至少保持 SERVO_STEP_DWELL_TICKS 个控制周期（5ms/拍）才允许再换，
+ *   进一步压掉抖动；路口强制回中不受停留限制（安全优先）。 */
+#define SERVO_STEP_EN           (1)                     // 1 = 启用分档打角（0 = 回到连续打角）
+#define SERVO_STEP_DIR          (1)                     // +1: 需求为正 -> 占空比变大（向右）；-1: 反过来
+#define SERVO_DUTY_MID          (Servo_MID + SERVO_TRIM) // 中位（直线/路口）
+#define SERVO_DUTY_L_SMALL      (440)                   // 直道 左小
+#define SERVO_DUTY_R_SMALL      (474)                   // 直道 右小
+#define SERVO_DUTY_L_BIG        (418)                   // 弯道 左大
+#define SERVO_DUTY_R_BIG        (500)                   // 弯道 右大
+#define SERVO_STEP_SMALL_IN     (1.50f)                 // |需求| ≥ 1.50° 进小档
+#define SERVO_STEP_SMALL_OUT    (0.80f)                 // |需求| < 0.80° 才退回中位
+#define SERVO_STEP_BIG_IN       (6.00f)                 // |需求| ≥ 6.00° 进大档
+#define SERVO_STEP_BIG_OUT      (4.00f)                 // |需求| < 4.00° 才退到小档
+#define SERVO_STEP_DWELL_TICKS  (2)                     // 每档至少保持 2 拍 = 10ms
+
 void Servo_Init     (void);                             // 初始化舵机 PWM
 void Servo_Set_Duty (int32 duty);                       // 直接输出占空比（内部限幅）
 void Servo_Set_Turn (float error);                      // 按中线偏差打角
 void Servo_Set_Offset (float offset);                   // 直接按占空比偏移打角（正=向左），带斜率限制
+void Servo_Set_Step   (float demand_deg, uint8 force_center); // 分档打角（正=向右）；force_center!=0 时强制回中位
+int32 Servo_Get_Duty  (void);                           // 读当前实际输出的占空比（屏幕显示/调试）
 void Servo_Clear_Hold (void);                           // 立刻取消出弯保持（路口用）
 
 #endif /* CODE_SERVO_REMAIN_H_ */

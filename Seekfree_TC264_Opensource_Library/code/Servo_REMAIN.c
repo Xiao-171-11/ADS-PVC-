@@ -28,6 +28,10 @@ static uint8  servo_deep     = 0;                      // 本弯峰值够大（真进过弯
 static float  servo_out_prev = 0.0f;                   // 上一拍实际输出的偏移（纯追踪斜率限制用）
 static uint8  servo_out_valid = 0;                     // 上一拍输出是否有效
 static uint8  servo_mode      = 0;                     // 0=偏差打角 1=纯追踪打角（用于无扰切换）
+static int32  servo_step_duty  = (int32)SERVO_DUTY_MID; // 分档打角：当前档位的占空比
+static int8   servo_step_level = 0;                     // 分档打角：当前档位 -2/-1/0/+1/+2
+static uint8  servo_step_hold  = 0;                     // 分档打角：本档已保持的拍数
+static int32  servo_duty_now   = (int32)SERVO_DUTY_MID;  // 当前实际写出的占空比（调试用）
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     舵机初始化
@@ -44,6 +48,10 @@ void Servo_Init(void)
     servo_out_prev   = 0.0f;
     servo_out_valid  = 0;
     servo_mode       = 0;
+    servo_step_duty  = (int32)SERVO_DUTY_MID;
+    servo_step_level = 0;
+    servo_step_hold  = 0;
+    Servo_Set_Duty((int32)SERVO_DUTY_MID);
 }
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -66,6 +74,18 @@ void Servo_Set_Duty(int32 duty)
         duty = (int32)SERVO_DUTY_MIN;
     }
     pwm_set_duty(SERVO_PWM_PIN, (uint32)duty);
+    servo_duty_now = duty;
+}
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     读当前实际输出的占空比（只读，调试/屏幕显示用）
+// 参数说明     void
+// 返回参数     int32           395 ~ 534
+// 使用示例     tft180_show_int(40, y3, Servo_Get_Duty(), 3);
+//-------------------------------------------------------------------------------------------------------------------
+int32 Servo_Get_Duty(void)
+{
+    return servo_duty_now;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -272,5 +292,110 @@ void Servo_Set_Offset(float offset)
     servo_armed    = 0;
 
     Servo_Set_Duty(SERVO_DUTY_FROM_OUT(offset));                /* 极性由 SERVO_DIR 决定 */
+}
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     分档打角（实车标定档位：464 / 440 / 474 / 418 / 500）
+// 参数说明     demand_deg      需要的打角量（度），正数=向右，负数=向左
+//              force_center    非 0 = 强制回中位（十字路口专用，绝不转弯）
+// 返回参数     void
+// 使用示例     Servo_Set_Step(control_ps.delta_deg, control_ps.cross);
+// 备注信息     1. 和 Servo_Set_Turn / Servo_Set_Offset 走同一条输出通路，三者可以任意切换；
+//              2. 进出档用不同阈值（滞环），并且每档至少停留 SERVO_STEP_DWELL_TICKS 拍，压掉抖动；
+//              3. 路口（force_center）不受停留限制，立刻回中位——这是"十字路口一定直行"的最后一道保险。
+//-------------------------------------------------------------------------------------------------------------------
+void Servo_Set_Step(float demand_deg, uint8 force_center)
+{
+    int8  want  = 0;
+    int8  abs_cur = 0;
+    float a = 0.0f;
+    float keep = 0.0f;
+    int32 duty = (int32)SERVO_DUTY_MID;
+
+#if (0 == SERVO_STEP_EN)
+    /* 关掉分档时退化成连续打角：需求 -> 偏移量（正=向左，所以取负号） */
+    Servo_Set_Offset(-demand_deg * (float)SERVO_DUTY_RANGE_L / 32.0f);
+    return;
+#else
+    if(servo_step_hold < 250)
+    {
+        servo_step_hold ++;
+    }
+
+    if(0 != force_center)                               /* 路口：立刻回中位，且清掉一切旧状态 */
+    {
+        servo_step_level = 0;
+        servo_step_duty  = (int32)SERVO_DUTY_MID;
+        servo_step_hold  = 0;
+        servo_out_prev   = 0.0f;
+        servo_out_valid  = 1;
+        servo_mode       = 1;
+        servo_hold_cnt   = 0;
+        servo_armed      = 0;
+        Servo_Set_Duty((int32)SERVO_DUTY_MID);
+        return;
+    }
+
+    a = (demand_deg >= 0.0f) ? demand_deg : (-demand_deg);
+
+    /* 1. 按"进档阈值"算想要的档位（带方向号） */
+    if(a >= SERVO_STEP_BIG_IN)
+    {
+        want = (demand_deg >= 0.0f) ? 2 : -2;
+    }
+    else if(a >= SERVO_STEP_SMALL_IN)
+    {
+        want = (demand_deg >= 0.0f) ? 1 : -1;
+    }
+    else
+    {
+        want = 0;
+    }
+
+    /* 2. 滞环：当前档位比想要的更"大"时，必须掉到退档阈值以下才允许降 */
+    abs_cur = (servo_step_level >= 0) ? servo_step_level : (int8)(-servo_step_level);
+    if((abs_cur > 0) && ((want >= 0 ? want : -want) < abs_cur))
+    {
+        keep = (2 == abs_cur) ? SERVO_STEP_BIG_OUT : SERVO_STEP_SMALL_OUT;
+        if(a >= keep)
+        {
+            want = servo_step_level;                    /* 保持原档 */
+        }
+    }
+
+    /* 3. 停留时间不足就不许换档（路口已被上面提前拦掉，不受这里限制） */
+    if(want != servo_step_level)
+    {
+        if(servo_step_hold < SERVO_STEP_DWELL_TICKS)
+        {
+            want = servo_step_level;
+        }
+        else
+        {
+            servo_step_hold = 0;
+        }
+    }
+
+    servo_step_level = want;
+
+    /* 4. 档位 -> 占空比 + 第 5 档（中位）的约定：占空比小=向左，大=向右 */
+    switch(want)
+    {
+        case 2:  duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_R_BIG   : (int32)SERVO_DUTY_L_BIG;   break;
+        case 1:  duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_R_SMALL : (int32)SERVO_DUTY_L_SMALL; break;
+        case -1: duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_L_SMALL : (int32)SERVO_DUTY_R_SMALL; break;
+        case -2: duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_L_BIG   : (int32)SERVO_DUTY_R_BIG;   break;
+        default: duty = (int32)SERVO_DUTY_MID;                                                        break;
+    }
+
+    servo_step_duty = duty;
+    servo_mode      = 1;
+
+    /* 5. 同步"连续通路"的历史量：这样从分档切回 Servo_Set_Turn / Servo_Set_Offset 时不会跳 */
+    servo_out_prev  = (float)SERVO_DIR * ((float)duty - (float)(Servo_MID + SERVO_TRIM));
+    servo_out_valid = 1;
+
+    Servo_Set_Duty(duty);
+#endif
 }
 

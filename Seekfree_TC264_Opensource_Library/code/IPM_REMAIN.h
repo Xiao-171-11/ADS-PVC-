@@ -79,4 +79,9 @@ void  IPM_Init(void);                                   // 算 LUT（上电调一次）
 uint8 IPM_Process(const uint8 *image);                  // 每帧调用；返回 0-成功 1-参数无效
 void  IPM_Show_On_TFT180(void);                         // IPM_DIS_EN=1 时显示俯视图
 
+/* 取某一行的 LUT（只读）：调用方可以据此判断"这个格点是不是真的采到了摄像头像素"。
+ * 俯视图里出界的格点被填成白色(255)，如果只看像素值会误以为"整行全白"，
+ * 所以判"整行全白"之前必须先问 LUT 这一行有没有出界点。 */
+const uint16 * IPM_Lut_Row(uint8 row);                  // 返回该行 IPM_W 个 uint16 的下标表（越界行返回 NULL）
+
 #endif /* CODE_IPM_REMAIN_H_ */

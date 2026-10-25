@@ -31,6 +31,7 @@ static uint8 trk_wide;                                      /* Â·Ãæ±ä¿íµÄĞĞÊı£¨Ê
 static uint8 trk_band;                                      /* ÖĞ¶Ï´øµÄ³¤¶È£¨¶ªÏß/±ä¿íµÄÁ¬ĞøĞĞÊı£© */
 static uint8 trk_above;                                     /* ÖĞ¶Ï´ø"ÉÏ·½"ÓÖ¿´ÇåµÄĞĞÊı ¡ª¡ª ÕâÊÇÂ·¿ÚºÍÍäµÀµÄ·ÖË®Áë */
 static uint8 trk_mark;                                      /* Â·ÃæÄÚºÚÉ«¶ÌºáÌõ±ê¼ÇµÄĞĞÊı£¨Ê®×Ö×îÓ²ÌØÕ÷£© */
+static uint8 trk_white;                                     /* ÕûĞĞÈ«°×£¨Ò»¸ö°µµã¶¼Ã»ÓĞ£©µÄĞĞÊı */
 static float trk_hw;                                        /* ±¾Ö¡Ñ§Ï°µ½µÄ°ëÈüµÀ¿í£¨¸ñµã£© */
 
 /* ---- Ê®×ÖÂ·¿Ú×´Ì¬»ú ---- */
@@ -190,6 +191,7 @@ static void pursuit_extract_track(void)
     trk_one   = 0;
     trk_wide  = 0;
     trk_mark  = 0;
+    trk_white = 0;
 
     for(r = 0; r < IPM_H; r ++)
     {
@@ -343,6 +345,52 @@ static void pursuit_extract_track(void)
 
     trk_hw = hw;
 
+    /* ---- Í³¼Æ"ÕûĞĞÈ«°×"µÄĞĞÊı ----
+       °×Â·ÃæÆÌÔÚÉîÉ«µØ°åÉÏ£ºÕı³£ÈüµÀÃ¿Ò»ĞĞ£¬Á½²àÀ¸ÍâÒ»¶¨ÓĞÉîÉ«µØ°å£¬
+       ËùÒÔ"96 ¸ñÒ»¸ö°µµã¶¼Ã»ÓĞ"Ö»¿ÉÄÜ³öÏÖÔÚºáÏò´óÂ·Ãæ£¨Ê®×Ö/²í¿Ú£©Àï¡£
+       ÍäµÀÓÀÔ¶²»»áÓĞÈ«°×ĞĞ£¨ÍäÍâÊÇµØ°å£©£¬Òò´ËÕâÌõÅĞ¾İ¶ÔÍäµÀÁãÎóÉË¡£
+       ³ö½ç¸ñµãÔÚ¸©ÊÓÍ¼Àï±»Ìî³É°×É«£¬ËùÒÔº¬³ö½çµãµÄĞĞ±ØĞëÏÈÅÅ³ı¡£ */
+    {
+        uint8 rr;
+        uint8 cc;
+        uint8 all_white;
+        uint8 countable;
+        const uint16 *lut;
+
+        trk_white = 0;
+
+        for(rr = 0; rr < IPM_H; rr ++)
+        {
+            lut = IPM_Lut_Row(rr);
+            if(NULL == lut)
+            {
+                continue;
+            }
+
+            all_white = 1;
+            countable = 1;
+
+            for(cc = 0; cc < IPM_W; cc ++)
+            {
+                if(IPM_LUT_INVALID == lut[cc])
+                {
+                    countable = 0;                          /* ÕâÒ»ĞĞÓĞ³ö½çµã£¬²»ÄÜÓÃÀ´ÅĞÈ«°× */
+                    break;
+                }
+                if(ipm_image[rr][cc] < 128)
+                {
+                    all_white = 0;
+                    break;
+                }
+            }
+
+            if((1 == countable) && (1 == all_white))
+            {
+                trk_white ++;
+            }
+        }
+    }
+
     /* ---- Í³¼Æ"ÖĞ¶Ï´ø"£ºµÚÒ»¶ÎÁ¬Ğø²»¿ÉĞÅĞĞÓĞ¶à³¤¡¢ËüÉÏ·½ÓÖ¿´ÇåÁË¶àÉÙĞĞ ----
        Ê®×Ö/²í¿Ú£ºÂ·ÃæÔÚÖĞ¼ä"ÏûÊ§Ò»¶ÎÓÖ»ØÀ´"£¬´øÉÏ·½»¹ÄÜ¿´Çå -> above ´ó
        ÍäµÀ³ö»­£ºÍâ²à±ßÏßÒ»µ©ÅÜ³ö»­Ãæ£¬ÉÏ·½ÔÙÒ²¿´²»Çå -> above = 0
@@ -433,6 +481,15 @@ static void pursuit_cross_update(float kappa_prev)
        Êµ³µÊÓÆµÀïÕâ¸öÈüµÀµÄÊ®×ÖÂ·¿Ú¾ÍÊÇÁ½ÅÅÕâÑùµÄºáÌõ£¬ÍäµÀÓÀÔ¶Ã»ÓĞ£¬
        ËùÒÔËüÒ»µ©³ÉÁ¢¾ÍÈÏ¶¨Â·¿Ú£¬²»¹ÜÉÏÃæÄÇĞ©·ñ¾öÌõ¼şÔõÃ´Ëµ¡£ */
     if(trk_mark >= PURSUIT_MARK_MIN_ROWS)
+    {
+        suspect = 1;
+    }
+
+    /* ÅĞ¾İÁãÖ®¶ş£¨Í¬Ñù·ÅÔÚËùÓĞ·ñ¾öÖ®ºó£©£º³öÏÖ"ÕûĞĞÈ«°×"¡£
+       ºáÏò´óÂ·Ãæ£¨Ê®×Ö/²í¿Ú£©²Å»áÈÃÒ»ÕûĞĞ 96 ¸ñÒ»¸ö°µµã¶¼Ã»ÓĞ£»
+       ÍäµÀÍâ²àÓÀÔ¶ÓĞÉîÉ«µØ°å£¬ËùÒÔÕâÌõ²»»á°ÑÍäµÀÎóÅĞ³ÉÂ·¿Ú¡£
+       Ëü×¨ÃÅ½â¾ö"Â·¿ÚÌ«¿í¡¢wide/open ±»´ó°ë¸ö»­Ãæ·ñ¾öµô"µÄÇéĞÎ¡£ */
+    if(trk_white >= PURSUIT_FULL_WHITE_MIN)
     {
         suspect = 1;
     }
@@ -606,8 +663,8 @@ void Pursuit_Process(void)
             snap.wide_rows     = trk_wide;
             snap.band_rows     = trk_band;
             snap.above_rows    = trk_above;
-    snap.mark_rows     = trk_mark;
-    snap.mark_rows     = trk_mark;
+            snap.mark_rows     = trk_mark;
+            snap.white_rows    = trk_white;
             ps_buf[ps_pub ^ 1] = snap;
             ps_pub             = (uint8)(ps_pub ^ 1);
             pursuit_info       = snap;
@@ -764,6 +821,8 @@ void Pursuit_Process(void)
     snap.wide_rows     = trk_wide;
     snap.band_rows     = trk_band;
     snap.above_rows    = trk_above;
+    snap.mark_rows     = trk_mark;
+    snap.white_rows    = trk_white;
     snap.target_row    = r0;
     snap.target_col    = (int16)cc;
     snap.kappa         = kappa;
@@ -825,6 +884,8 @@ void Pursuit_Init(void)
     trk_wide     = 0;
     trk_band     = 0;
     trk_above    = 0;
+    trk_mark     = 0;
+    trk_white    = 0;
     trk_hw       = 0.0f;
     cross_state  = 0;
     cross_hits   = 0;
@@ -839,9 +900,10 @@ void Pursuit_Init(void)
 /* ============================================================================
  *  ÆÁÄ»ÏÔÊ¾£ºTFT180 Ä¬ÈÏÊúÆÁ 128x160¡¢×ÖÌå 8x16£¨Ò»¸ö×Ö·û 8x16 ÏñËØ£©
  *    Y1~Y6£¨y = 2/18/34/50/68/84£©ÒÑ±»Ïà»ú/»ùµã/»ùÏß/ÖĞÏß/¿ØÖÆÎå¿éÕ¼Âú£¬
- *    ËùÒÔÕâÀï²¹µÚ 7¡¢8 ĞĞ£¨y = 100 / 116£©£º
+ *    ËùÒÔÕâÀï²¹µÚ 7¡¢8¡¢9 ĞĞ£¨y = 100 / 116 / 132£©£º
  *      µÚ 7 ĞĞ£ºP ¿´µÃÇåµÄĞĞÊı | c Â·¿Ú±êÖ¾ | d Ç°ÂÖ×ª½Ç | o ³å³öÈüµÀ±êÖ¾
- *      µÚ 8 ĞĞ£ºk ÇúÂÊ x1000 | L Ç°Õ°¾àÀë mm
+ *      µÚ 8 ĞĞ£ºb ÖĞ¶Ï´ø³¤¶È | A ´øÉÏ·½¿´ÇåĞĞÊı | W ±ä¿íĞĞÊı | M ºÚÉ«ºáÌõĞĞÊı
+ *      µÚ 9 ĞĞ£ºF ÕûĞĞÈ«°×ĞĞÊı | D ¶æ»úµ±Ç°µµÎ»Õ¼¿Õ±È£¨464/440/474/418/500£©
  *    ¹Ø¼ü£ºzf ¿âµÄ show_int ×Ö·û´®³¤¶ÈÊÇ num+1£¬show_float ÊÇ num+pointnum+2£¬
  *          ²»×ã²¹¿Õ¸ñ£¨¶¨³¤£©£¬ËùÒÔ x ±ØĞë°´Õâ¸ö³¤¶ÈÁô¸ñ×Ó£¬×îºóÒ»¸ñÒ»µ©µ½ x=128
  *          ¾Í»áÔÚ tft180.c:460 ´¥·¢ zf_assert(x < tft180_width_max) ËÀ»ú¡£
@@ -851,6 +913,7 @@ void Pursuit_Show_On_TFT180(void)
 #if ((1 == PURSUIT_DIS_EN) && (0 == IPM_DIS_EN))
     uint16 y1 = 0;
     uint16 y2 = 0;
+    uint16 y3 = 0;
 
     y1 = (uint16)(CAMERA_INFO_TOP + 100);
     y2 = (uint16)(y1 + 16);
@@ -880,5 +943,15 @@ void Pursuit_Show_On_TFT180(void)
     tft180_show_int   (72, y2, (int32)pursuit_info.wide_rows, 2);               /* 72 .. 95 */
     tft180_show_string(96, y2, "M");
     tft180_show_int   (104, y2, (int32)pursuit_info.mark_rows, 2);              /* 104 .. 119 */
+
+    /* µÚ 9 ĞĞ£¨y = 132£©£ºF ÕûĞĞÈ«°×µÄĞĞÊı | D ¶æ»úµ±Ç°µµÎ»Õ¼¿Õ±È£¨464/440/474/418/500£© */
+    y3 = (uint16)(y2 + 16);
+    if((y3 + 16) <= tft180_height_max)
+    {
+        tft180_show_string(0,  y3, "F");
+        tft180_show_int   (8,  y3, (int32)pursuit_info.white_rows, 2);          /* 8  .. 31 */
+        tft180_show_string(32, y3, "D");
+        tft180_show_int   (40, y3, Servo_Get_Duty(), 3);                        /* 40 .. 71 */
+    }
 #endif
 }

@@ -27,6 +27,10 @@
 static pursuit_struct control_ps;                           // 本拍取到的纯追踪快照
 static uint8          control_use_pursuit = 0;              // 1 = 本拍用纯追踪
 
+/* ================================ 分档打角桥接 ================================ */
+static float control_steer_demand = 0.0f;                   // 本拍打角需求（度，正 = 向右）
+static uint8 control_force_center = 0;                      // 1 = 强制回中位（路口专用）
+
 /* 纯追踪算前瞻距离要用的"规划速度"。写在 Control_Tick 里，读在 Pursuit_Process 里。
  * 用规划值而不是实测值：实测值参与会形成"减速->前瞻变近->打角变大->更减速"的正反馈。 */
 volatile float control_base_speed_ref = CONTROL_BASE_SPEED;
@@ -334,6 +338,38 @@ void Control_Tick(void)
     control_use_pursuit = Pursuit_Get(&control_ps);      // 0 = 纯追踪这一帧不可信（标定表没好/视野太差）
 #endif
 
+#if (1 == CONTROL_STEP_STEER_EN)
+    /* 分档打角：舵机只认 5 个档位（464 / 440 / 474 / 418 / 500）。
+     * 1) 打角需求：优先用纯追踪算出来的角度；没有纯追踪就把中线偏差按比例换成角度。
+     * 2) 路口：force_center = 1 → Servo_Set_Step 立刻回中位 464，无论需求是多少。
+     *    这是"十字路口一定直行"的硬保险：纯追踪说路口、或老算法说路口，任意一个成立就回中。 */
+    control_steer_demand = 0.0f;
+    control_force_center = 0;
+
+    if(1 == control_use_pursuit)
+    {
+        control_steer_demand = control_ps.delta_deg;                 // 正 = 向右
+        if(0 != control_ps.cross)
+        {
+            control_force_center = 1;
+        }
+    }
+    else
+    {
+        control_steer_demand = error * CONTROL_ERR_PX_TO_DEG;        // 正偏差 = 赛道偏右 = 往右打
+        if(midline_info.cross)
+        {
+            control_force_center = 1;
+        }
+    }
+
+    if(0 != control_force_center)
+    {
+        Servo_Clear_Hold();                                          // 路口不要残留出弯保持
+    }
+
+    Servo_Set_Step(control_steer_demand, control_force_center);
+#else
     if(1 == control_use_pursuit)
     {
         /* 纯追踪输出的已经是"该打多少"，不需要再叠一层增益；内部只做限幅和斜率限制 */
@@ -347,6 +383,7 @@ void Control_Tick(void)
         }
         Servo_Set_Turn(error);
     }
+#endif
 
     // 4. 读编码器：每 5ms 读一次并清零，读到的脉冲数就是"速度"
     speed_l = Encoder_Get_Speed(0);
