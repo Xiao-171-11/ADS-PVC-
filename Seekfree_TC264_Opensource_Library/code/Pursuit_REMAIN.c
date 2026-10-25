@@ -757,8 +757,9 @@ void Pursuit_Process(void)
 
     kappa_use = tanf(delta / PURSUIT_RAD2DEG) / PURSUIT_WHEELBASE_MM;
 
-    /* out 正 = 向左；delta 正 = 右转，所以取负号 */
-    steer = (-(delta / PURSUIT_DELTA_MAX_DEG)) * ((float)SERVO_DUTY_RANGE_L);
+    /* delta 正 = 右转；steer 正 = 向右（占空比减小，与 Servo_Set_Offset 的约定一致）。
+       早期版本这里取了负号，实车表现为"左弯往右打"，这是转向反了的根因，已修正。 */
+    steer = ((delta / PURSUIT_DELTA_MAX_DEG)) * ((float)SERVO_DUTY_RANGE_L);
     if(steer > ((float)SERVO_DUTY_RANGE_L))
     {
         steer = (float)SERVO_DUTY_RANGE_L;

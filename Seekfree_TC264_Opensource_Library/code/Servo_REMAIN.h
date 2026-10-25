@@ -30,8 +30,8 @@
 #define SERVO_DUTY_MAX          (534)                   // 实测机械上限
 
 /* ======================== 打角极性（单开关） ========================
- * 约定：out（偏移量）> 0 表示"逻辑向左打"，由下面这个符号翻译成占空比。
- *   SERVO_DIR = -1 ：out 正 -> 占空比减小（占空比越小越向左）——仓库原有方向
+ * 约定：out（偏移量）> 0 表示"向右打"，由下面这个符号翻译成占空比。
+ *   SERVO_DIR = -1 ：out 正 -> 占空比减小（占空比越小越向右）——仓库原有方向，实车已验证
  *   SERVO_DIR = +1 ：out 正 -> 占空比增大（占空比越小越向左）——若实测是"号小往左"就改这里
  * 偏差 PD 与纯追踪两条通路共用这一个符号，改一次两边一起反向，不会互相打架。
  * 标定方法：上电后把 Servo_Set_Duty(400) / Servo_Set_Duty(530) 各打一次，
@@ -39,8 +39,8 @@
 #define SERVO_DIR               (-1)
 
 #if (SERVO_DIR < 0)
-#define SERVO_DUTY_RANGE_L      ((Servo_MID + SERVO_TRIM) - SERVO_DUTY_MIN)   // out 正（左）可用 65 个码
-#define SERVO_DUTY_RANGE_R      (SERVO_DUTY_MAX - (Servo_MID + SERVO_TRIM))   // out 负（右）可用 74 个码
+#define SERVO_DUTY_RANGE_L      ((Servo_MID + SERVO_TRIM) - SERVO_DUTY_MIN)   // out 正（向右）可用 65 个码（占空比减小方向）
+#define SERVO_DUTY_RANGE_R      (SERVO_DUTY_MAX - (Servo_MID + SERVO_TRIM))   // out 负（向左）可用 74 个码（占空比增大方向）
 #else
 #define SERVO_DUTY_RANGE_L      (SERVO_DUTY_MAX - (Servo_MID + SERVO_TRIM))   // 74 个码
 #define SERVO_DUTY_RANGE_R      ((Servo_MID + SERVO_TRIM) - SERVO_DUTY_MIN)   // 65 个码
@@ -75,22 +75,24 @@
 
 /* ======================== 分档打角（实车标定值） ========================
  * 实车要求：舵机不要连续微调，直接给固定的几个档位，靠"档位 + 停留时间"转向。
- *   直道调姿：440（左小）/ 474（右小）
- *   弯道转向：418（左大）/ 500（右大）
+ *   直道调姿：440（右小）/ 474（左小）
+ *   弯道转向：418（右大）/ 500（左大）
  *   中位/路口：460（绝不转弯）
- * 方向：占空比小 = 前轮向左，占空比大 = 前轮向右（实测，中值 460）。
+ * 方向：占空比小 = 前轮向右，占空比大 = 前轮向左（实车实测，中值 460）。
+ *   这条与仓库原注释「偏大向左转，偏小向右转」一致；实车现象也证明如此：
+ *   老 PD 通路在弯道上一直是对的，而老 PD 是 error>0（赛道偏右）-> 占空比变小 -> 车往右走。
  *
  * 滞环（hysteresis）：进档用 IN 阈值，退档用 OUT 阈值，OUT < IN。
  *   没有滞环的话，需求在阈值附近抖动时会 460/440/460/440 反复打，舵机会"哒哒"响并且车头摆。
  * 停留（dwell）：每次换档后至少保持 SERVO_STEP_DWELL_TICKS 个控制周期（5ms/拍）才允许再换，
  *   进一步压掉抖动；路口强制回中不受停留限制（安全优先）。 */
 #define SERVO_STEP_EN           (1)                     // 1 = 启用分档打角（0 = 回到连续打角）
-#define SERVO_STEP_DIR          (1)                     // +1: 需求为正 -> 占空比变大（向右）；-1: 反过来
+#define SERVO_STEP_DIR          (1)                     // +1: 需求为正（要向右）-> 用 R 档（占空比变小）；-1: 反过来
 #define SERVO_DUTY_MID          (Servo_MID + SERVO_TRIM) // 中位（直线/路口）
-#define SERVO_DUTY_L_SMALL      (440)                   // 直道 左小
-#define SERVO_DUTY_R_SMALL      (474)                   // 直道 右小
-#define SERVO_DUTY_L_BIG        (418)                   // 弯道 左大
-#define SERVO_DUTY_R_BIG        (500)                   // 弯道 右大
+#define SERVO_DUTY_R_SMALL      (440)                   // 直道 向右（小，占空比 -20）
+#define SERVO_DUTY_L_SMALL      (474)                   // 直道 向左（小，占空比 +14）
+#define SERVO_DUTY_R_BIG        (418)                   // 弯道 向右（大，占空比 -42）
+#define SERVO_DUTY_L_BIG        (500)                   // 弯道 向左（大，占空比 +40）
 #define SERVO_STEP_SMALL_IN     (1.50f)                 // |需求| ≥ 1.50° 进小档
 #define SERVO_STEP_SMALL_OUT    (0.80f)                 // |需求| < 0.80° 才退回中位
 #define SERVO_STEP_BIG_IN       (6.00f)                 // |需求| ≥ 6.00° 进大档

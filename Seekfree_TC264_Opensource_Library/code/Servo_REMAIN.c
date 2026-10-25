@@ -3,7 +3,7 @@
  *
  *  舵机控制：分段增益 + 微分阻尼 + 死区
  *
- *  打角曲线（out 是相对中值的占空比偏移，正数向左、负数向右）：
+ *  打角曲线（out 是相对中值的占空比偏移，正数=向右（占空比减小）、负数=向左（占空比增大））：
  *      |error| <= SERVO_DEAD_ZONE :  out = 0
  *      |error| <= SERVO_KNEE      :  out = ± KP_NEAR * |error|
  *      |error| >  SERVO_KNEE      :  out = ± (KP_NEAR*KNEE + KP_FAR*(|error|-KNEE))
@@ -248,7 +248,7 @@ void Servo_Set_Turn(float error)
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     直接按占空比偏移打角（纯追踪用，正=向左）
+// 函数简介     直接按占空比偏移打角（纯追踪用，正=向右 / 占空比减小）
 // 参数说明     offset          想要的偏移量，范围 -SERVO_DUTY_RANGE_R ~ +SERVO_DUTY_RANGE_L
 // 返回参数     void
 // 使用示例     Servo_Set_Offset(pursuit_info.steer_out);
@@ -295,7 +295,7 @@ void Servo_Set_Offset(float offset)
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     分档打角（实车标定档位：460 / 440 / 474 / 418 / 500）
+// 函数简介     分档打角（实车标定档位：中位 460 / 右小 440 / 左小 474 / 右大 418 / 左大 500）
 // 参数说明     demand_deg      需要的打角量（度），正数=向右，负数=向左
 //              force_center    非 0 = 强制回中位（十字路口专用，绝不转弯）
 // 返回参数     void
@@ -313,8 +313,9 @@ void Servo_Set_Step(float demand_deg, uint8 force_center)
     int32 duty = (int32)SERVO_DUTY_MID;
 
 #if (0 == SERVO_STEP_EN)
-    /* 关掉分档时退化成连续打角：需求 -> 偏移量（正=向左，所以取负号） */
-    Servo_Set_Offset(-demand_deg * (float)SERVO_DUTY_RANGE_L / 32.0f);
+    /* 关掉分档时退化成连续打角：需求(度) -> 偏移量，符号一致（正=向右）。
+       32.0f 必须与 PURSUIT_DELTA_MAX_DEG 保持一致（满打角对应满偏移） */
+    Servo_Set_Offset(demand_deg * (float)SERVO_DUTY_RANGE_L / 32.0f);
     return;
 #else
     if(servo_step_hold < 250)
@@ -378,7 +379,7 @@ void Servo_Set_Step(float demand_deg, uint8 force_center)
 
     servo_step_level = want;
 
-    /* 4. 档位 -> 占空比 + 第 5 档（中位）的约定：占空比小=向左，大=向右 */
+    /* 4. 档位 -> 占空比：实车实测"占空比小 = 向右"，所以 demand>0（向右）用 R 档（数值更小） */
     switch(want)
     {
         case 2:  duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_R_BIG   : (int32)SERVO_DUTY_L_BIG;   break;

@@ -131,7 +131,7 @@ typedef struct
     int16  target_col;                                  // 前瞻点所在列
     float  kappa;                                       // 曲率（1/mm），右转为正
     float  delta_deg;                                   // 前轮转角（度）
-    float  steer_out;                                   // 给舵机的偏移（正=向左，与 Servo_Set_Turn 同号）
+    float  steer_out;                                   // 给舵机的偏移（正=向右 = 占空比减小，与 Servo_Set_Offset 同号）
     float  slow;                                        // 速度系数（0~1）
     float  ratio;                                       // 后轮差速比例
     float  lookahead_mm;                                // 本次前视距离
