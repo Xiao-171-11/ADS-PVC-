@@ -75,10 +75,13 @@
 
 /* ======================== 分档打角（实车标定值） ========================
  * 实车要求：舵机不要连续微调，直接给固定的几个档位，靠"档位 + 停留时间"转向。
- *   直道调姿：440（右小）/ 474（左小）
+ *   直道微调：452（右微调）/ 468（左微调）  —— 只 ±8 码，直道上绝不甩头
+ *   直道大偏 / 缓弯：440（右小）/ 474（左小）
  *   弯道转向：418（右大）/ 500（左大）
  *   急弯（转不过来）：400（右超大）/ 530（左超大）
  *   中位/路口：460（绝不转弯）
+ * 核心思想：直道用"微调档"（±4° 转角）慢慢把车摆正，弯道才允许"大档/超大档"（±21°/±30°）。
+ *   这样同一套代码里直道的姿态修正是软的，弯道的转向是硬的，两者不会互相将就。
  * 方向：占空比小 = 前轮向右，占空比大 = 前轮向左（实车实测，中值 460）。
  *   这条与仓库原注释「偏大向左转，偏小向右转」一致；实车现象也证明如此：
  *   老 PD 通路在弯道上一直是对的，而老 PD 是 error>0（赛道偏右）-> 占空比变小 -> 车往右走。
@@ -90,18 +93,22 @@
 #define SERVO_STEP_EN           (1)                     // 1 = 启用分档打角（0 = 回到连续打角）
 #define SERVO_STEP_DIR          (1)                     // +1: 需求为正（要向右）-> 用 R 档（占空比变小）；-1: 反过来
 #define SERVO_DUTY_MID          (Servo_MID + SERVO_TRIM) // 中位（直线/路口）
-#define SERVO_DUTY_R_SMALL      (440)                   // 直道 向右（小，占空比 -20）
+#define SERVO_DUTY_R_TINY       (452)                   // 直道微调 向右（占空比 -8  ≈ 4°）
+#define SERVO_DUTY_L_TINY       (468)                   // 直道微调 向左（占空比 +8）
+#define SERVO_DUTY_R_SMALL      (440)                   // 直道大偏/缓弯 向右（小，占空比 -20）
 #define SERVO_DUTY_L_SMALL      (474)                   // 直道 向左（小，占空比 +14）
 #define SERVO_DUTY_R_BIG        (418)                   // 弯道 向右（大，占空比 -42）
 #define SERVO_DUTY_L_BIG        (500)                   // 弯道 向左（大，占空比 +40）
 #define SERVO_DUTY_R_HUGE       (400)                   // 急弯 向右（超大，占空比 -60）
 #define SERVO_DUTY_L_HUGE       (530)                   // 急弯 向左（超大，占空比 +70）
-#define SERVO_STEP_SMALL_IN     (1.50f)                 // |需求| ≥ 1.00° 进小档
-#define SERVO_STEP_SMALL_OUT    (0.90f)                 // |需求| < 0.60° 才退回中位
-#define SERVO_STEP_BIG_IN       (3.50f)                 // |需求| ≥ 3.50° 进大档
-#define SERVO_STEP_BIG_OUT      (2.20f)                 // |需求| < 2.20° 才退到小档
+#define SERVO_STEP_TINY_IN      (1.50f)                 // |需求| ≥ 1.50° 进微调档（直道专用，软的）
+#define SERVO_STEP_TINY_OUT     (0.80f)                 // |需求| < 0.80° 才回中位
+#define SERVO_STEP_SMALL_IN     (3.00f)                 // |需求| ≥ 3.00° 进小档
+#define SERVO_STEP_SMALL_OUT    (2.20f)                 // |需求| < 2.20° 才退到微调档
+#define SERVO_STEP_BIG_IN       (5.50f)                 // |需求| ≥ 5.50° 进大档（真弯道才给）
+#define SERVO_STEP_BIG_OUT      (4.00f)                 // |需求| < 4.00° 才退到小档
 #define SERVO_STEP_HUGE_IN      (10.00f)                // |需求| ≥ 10.0° 进超大档（急弯打不动就用它）
-#define SERVO_STEP_HUGE_OUT     (7.00f)                 // |需求| < 7.00° 才退到大档
+#define SERVO_STEP_HUGE_OUT     (7.50f)                 // |需求| < 7.50° 才退到大档
 #define SERVO_STEP_DWELL_TICKS  (1)                     // 每档至少保持 1 拍 = 5ms（急弯要快要跟得上）
 
 void Servo_Init     (void);                             // 初始化舵机 PWM

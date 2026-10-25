@@ -102,7 +102,7 @@
  *   档位由 Servo_Set_Step() 内部判定（带滞环 + 停留时间），路口强制 460、绝不转弯。
  * 0-退回连续打角（纯追踪 steer_out / 偏差分段 PD），出问题时改这里立刻对比 */
 #define CONTROL_STEP_STEER_EN       (1)
-#define CONTROL_ERR_PX_TO_DEG       (0.60f)                 // 偏差(像素) -> 打角需求(度)，没有纯追踪时用
+#define CONTROL_ERR_PX_TO_DEG       (0.45f)                 // 偏差(像素) -> 打角需求(度)，没有纯追踪时用
 
 /* ================================ 保护 ================================ */
 #define CONTROL_LOST_STOP_TICKS     (0)                     // 连续丢线后停车（0=不停车，弯道短暂丢线不会卡死）
