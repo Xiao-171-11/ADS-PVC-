@@ -295,7 +295,7 @@ void Servo_Set_Offset(float offset)
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     分档打角（实车标定档位：中位 460 / 右小 440 / 左小 474 / 右大 418 / 左大 500）
+// 函数简介     分档打角（实车标定档位：中位 460 / 右小 440 / 左小 474 / 右大 418 / 左大 500 / 右超大 400 / 左超大 530）
 // 参数说明     demand_deg      需要的打角量（度），正数=向右，负数=向左
 //              force_center    非 0 = 强制回中位（十字路口专用，绝不转弯）
 // 返回参数     void
@@ -339,8 +339,12 @@ void Servo_Set_Step(float demand_deg, uint8 force_center)
 
     a = (demand_deg >= 0.0f) ? demand_deg : (-demand_deg);
 
-    /* 1. 按"进档阈值"算想要的档位（带方向号） */
-    if(a >= SERVO_STEP_BIG_IN)
+    /* 1. 按"进档阈值"算想要的档位（带方向号）：0 中位 / 1 小 / 2 大 / 3 超大 */
+    if(a >= SERVO_STEP_HUGE_IN)
+    {
+        want = (demand_deg >= 0.0f) ? 3 : -3;
+    }
+    else if(a >= SERVO_STEP_BIG_IN)
     {
         want = (demand_deg >= 0.0f) ? 2 : -2;
     }
@@ -357,7 +361,18 @@ void Servo_Set_Step(float demand_deg, uint8 force_center)
     abs_cur = (servo_step_level >= 0) ? servo_step_level : (int8)(-servo_step_level);
     if((abs_cur > 0) && ((want >= 0 ? want : -want) < abs_cur))
     {
-        keep = (2 == abs_cur) ? SERVO_STEP_BIG_OUT : SERVO_STEP_SMALL_OUT;
+        if(3 == abs_cur)
+        {
+            keep = SERVO_STEP_HUGE_OUT;
+        }
+        else if(2 == abs_cur)
+        {
+            keep = SERVO_STEP_BIG_OUT;
+        }
+        else
+        {
+            keep = SERVO_STEP_SMALL_OUT;
+        }
         if(a >= keep)
         {
             want = servo_step_level;                    /* 保持原档 */
@@ -382,10 +397,12 @@ void Servo_Set_Step(float demand_deg, uint8 force_center)
     /* 4. 档位 -> 占空比：实车实测"占空比小 = 向右"，所以 demand>0（向右）用 R 档（数值更小） */
     switch(want)
     {
+        case 3:  duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_R_HUGE  : (int32)SERVO_DUTY_L_HUGE;  break;
         case 2:  duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_R_BIG   : (int32)SERVO_DUTY_L_BIG;   break;
         case 1:  duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_R_SMALL : (int32)SERVO_DUTY_L_SMALL; break;
         case -1: duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_L_SMALL : (int32)SERVO_DUTY_R_SMALL; break;
         case -2: duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_L_BIG   : (int32)SERVO_DUTY_R_BIG;   break;
+        case -3: duty = (SERVO_STEP_DIR > 0) ? (int32)SERVO_DUTY_L_HUGE  : (int32)SERVO_DUTY_R_HUGE;  break;
         default: duty = (int32)SERVO_DUTY_MID;                                                        break;
     }
 

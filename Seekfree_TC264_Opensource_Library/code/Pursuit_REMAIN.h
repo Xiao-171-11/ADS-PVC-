@@ -55,12 +55,12 @@
 #define PURSUIT_DELTA_MAX_DEG   (32.0f)                 // 前轮最大转角（机械极限 30~35 度）
 
 /* 前视距离随速度线性变化：慢的时候看近一点（不会切内道），快的时候看远一点（不会摆） */
-#define PURSUIT_LD_MIN_MM       (250.0f)
-#define PURSUIT_LD_MAX_MM       (800.0f)                // 不要超过 IPM_Y_FAR_MM，否则前瞻点在俯视图外
+#define PURSUIT_LD_MIN_MM       (220.0f)
+#define PURSUIT_LD_MAX_MM       (700.0f)                // 不要超过 IPM_Y_FAR_MM；弯道转不过来就继续减小（650/600）
 #define PURSUIT_SPEED_NORM_MIN  (0.30f)                 // 速度归一化下限（发车前也至少看 415mm）
 
 /* ============================ 弯道减速 ============================ */
-#define PURSUIT_CURV_SLOW_K     (0.0140f)                // 前轮每 1 度转角降多少速度
+#define PURSUIT_CURV_SLOW_K     (0.0180f)                // 每 1 度转角降多少速（0.014 -> 0.018：弯里更慢、更咬得住）
 #define PURSUIT_CURV_SLOW_MIN   (0.4200f)               // 最慢降到 42%
 
 /* ============================ 十字路口 ============================ */
