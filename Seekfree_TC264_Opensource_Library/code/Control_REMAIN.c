@@ -339,9 +339,9 @@ void Control_Tick(void)
 #endif
 
 #if (1 == CONTROL_STEP_STEER_EN)
-    /* 分档打角：舵机只认 5 个档位（464 / 440 / 474 / 418 / 500）。
+    /* 分档打角：舵机只认 5 个档位（460 / 440 / 474 / 418 / 500）。
      * 1) 打角需求：优先用纯追踪算出来的角度；没有纯追踪就把中线偏差按比例换成角度。
-     * 2) 路口：force_center = 1 → Servo_Set_Step 立刻回中位 464，无论需求是多少。
+     * 2) 路口：force_center = 1 → Servo_Set_Step 立刻回中位 460，无论需求是多少。
      *    这是"十字路口一定直行"的硬保险：纯追踪说路口、或老算法说路口，任意一个成立就回中。 */
     control_steer_demand = 0.0f;
     control_force_center = 0;

@@ -16,14 +16,14 @@
 #define CODE_SERVO_REMAIN_H_
 #include "zf_common_headfile.h"
 
-#define Servo_MID               (464)                   // 舵机中值（50Hz，实测）
+#define Servo_MID               (460)                   // 舵机中值（50Hz，实测）
 #define SERVO_TRIM              (0)                     // 中值微调：直道上车往哪边偏，就往反方向调几个数
 #define SERVO_PWM_PIN           ATOM0_CH1_P33_9         // 舵机 PWM 引脚
 #define SERVO_PWM_FREQ          (50)                    // 舵机固定 50Hz
 
 /* ======================== 机械行程（实测，不许越过） ========================
- * 占空比可用区间 395 ~ 534，中值 464：
- *   向下最多 464 - 395 = 69 个码，向上最多 534 - 464 = 70 个码。
+ * 占空比可用区间 395 ~ 534，中值 460：
+ *   向下最多 460 - 395 = 65 个码，向上最多 534 - 460 = 74 个码。
  * 所有限幅都从这两个数推出来，任何通路（偏差 PD / 纯追踪 / 出弯保持）都不会越界；
  * 一旦顶到死点就是堵转发烫，所以边界只写在这里一次。 */
 #define SERVO_DUTY_MIN          (395)                   // 实测机械下限
@@ -39,11 +39,11 @@
 #define SERVO_DIR               (-1)
 
 #if (SERVO_DIR < 0)
-#define SERVO_DUTY_RANGE_L      ((Servo_MID + SERVO_TRIM) - SERVO_DUTY_MIN)   // out 正（左）可用 69 个码
-#define SERVO_DUTY_RANGE_R      (SERVO_DUTY_MAX - (Servo_MID + SERVO_TRIM))   // out 负（右）可用 70 个码
+#define SERVO_DUTY_RANGE_L      ((Servo_MID + SERVO_TRIM) - SERVO_DUTY_MIN)   // out 正（左）可用 65 个码
+#define SERVO_DUTY_RANGE_R      (SERVO_DUTY_MAX - (Servo_MID + SERVO_TRIM))   // out 负（右）可用 74 个码
 #else
-#define SERVO_DUTY_RANGE_L      (SERVO_DUTY_MAX - (Servo_MID + SERVO_TRIM))   // 70 个码
-#define SERVO_DUTY_RANGE_R      ((Servo_MID + SERVO_TRIM) - SERVO_DUTY_MIN)   // 69 个码
+#define SERVO_DUTY_RANGE_L      (SERVO_DUTY_MAX - (Servo_MID + SERVO_TRIM))   // 74 个码
+#define SERVO_DUTY_RANGE_R      ((Servo_MID + SERVO_TRIM) - SERVO_DUTY_MIN)   // 65 个码
 #endif
 #define SERVO_DUTY_RANGE        (SERVO_DUTY_RANGE_L)    // 兼容旧名字（取较大一侧）
 #define SERVO_DUTY_FROM_OUT(off)    ((int32)((float)(Servo_MID + SERVO_TRIM) + ((float)(SERVO_DIR) * (float)(off))))
@@ -77,11 +77,11 @@
  * 实车要求：舵机不要连续微调，直接给固定的几个档位，靠"档位 + 停留时间"转向。
  *   直道调姿：440（左小）/ 474（右小）
  *   弯道转向：418（左大）/ 500（右大）
- *   中位/路口：464（绝不转弯）
- * 方向：占空比小 = 前轮向左，占空比大 = 前轮向右（实测，中值 464）。
+ *   中位/路口：460（绝不转弯）
+ * 方向：占空比小 = 前轮向左，占空比大 = 前轮向右（实测，中值 460）。
  *
  * 滞环（hysteresis）：进档用 IN 阈值，退档用 OUT 阈值，OUT < IN。
- *   没有滞环的话，需求在阈值附近抖动时会 464/440/464/440 反复打，舵机会"哒哒"响并且车头摆。
+ *   没有滞环的话，需求在阈值附近抖动时会 460/440/460/440 反复打，舵机会"哒哒"响并且车头摆。
  * 停留（dwell）：每次换档后至少保持 SERVO_STEP_DWELL_TICKS 个控制周期（5ms/拍）才允许再换，
  *   进一步压掉抖动；路口强制回中不受停留限制（安全优先）。 */
 #define SERVO_STEP_EN           (1)                     // 1 = 启用分档打角（0 = 回到连续打角）
