@@ -33,12 +33,21 @@
 #include "IPM_REMAIN.h"
 
 /* ============================ 边界提取 ============================ */
+/* 本赛道的边界不是"黑线"，而是"白路面 -> 暗地板"的跳变（白胶带铺在蓝色地板上）。
+ * 所以边界提取的规则是：从预测中线往两侧扫，跳过路面里那些细的暗条纹
+ * （斑马线、横臂、反光缝，厚度 <= PURSUIT_LINE_W_MAX），
+ * 遇到第一片"够厚"的暗区，它的内侧第一个格子就是赛道边界。 */
 #define PURSUIT_SEARCH_COLS     (42)                    // 从预测中线向左右各搜多少列
-#define PURSUIT_LINE_W_MAX      (8)                     // 一条边线最多几格宽（再宽是横臂，不是边线）
+#define PURSUIT_LINE_W_MAX      (8)                     // 路面内暗条纹的最大厚度（格）；比这更厚才算地板边界
 #define PURSUIT_TRACK_W_MIN     (22)                    // 有效赛道宽度下限（格点，约 148mm）
 #define PURSUIT_TRACK_W_MAX     (92)                    // 有效赛道宽度上限（格点，约 620mm）
 #define PURSUIT_WIDTH_TOL       (0.50f)                 // 实测宽度和学习的宽度差超过 50% 就当不可信
 #define PURSUIT_SINGLE_TOL      (10.0f)                 // 单侧推算结果与预测中线差多少格以内才敢用
+#define PURSUIT_WIDE_RATIO      (1.45f)                 // 实测宽度 > 学习宽度 x 这个倍数 = 路面变宽（十字/岔口）
+#define PURSUIT_SLOPE_MAX       (1.20f)                 // 每往上一行，中线最多横移几格（限制斜率，防一路滑进支路）
+#define PURSUIT_JUMP_MAX        (8.00f)                 // 单行中线相对预测值突跳超过这么多格 -> 该行不可信
+#define PURSUIT_XT_CLAMP_MM     (IPM_X_HALF_MM * 0.92f) // 前瞻点横向偏移的硬上限（mm）：俯视图就 320mm 宽，超出去一定是杂点
+#define PURSUIT_TARGET_ROW_MIN  (8)                     // 前瞻行往下找可信行时最低找到第几行（≈ 250mm）
 
 /* ============================ 纯追踪几何参数 ============================ */
 #define PURSUIT_WHEELBASE_MM    (130.0f)                // 轴距（前后轮中心距），量一下填这里
@@ -55,14 +64,32 @@
 #define PURSUIT_CURV_SLOW_MIN   (0.4200f)               // 最慢降到 42%
 
 /* ============================ 十字路口 ============================ */
-/* 判据是"左右两边同时丢"：十字的横臂把两条边线一起切断；
- * 弯道只会让外侧那条边线跑出画面（单侧丢），两者用 open/one_side 的比例区分。 */
-#define PURSUIT_CROSS_MIN_OPEN  (6)                     // 至少 6 行左右同时丢才算横臂开口
+/* 判据的核心只有一条：路面在中间"消失一段，又在上方回来"。
+ *    band_rows ：第一段连续不可信行的长度（路面断掉的那一段）
+ *    above_rows：这段不可信行"上方"又看清的行数
+ * 十字/岔口：带子有长度、且上方又能看清 -> 判路口
+ * 弯道出画：外侧边线一旦出画，上方永远是盲区 -> above = 0 -> 绝不判路口
+ * 另外把 wide_rows（路面整体变宽）当第二条独立判据。 */
+#define PURSUIT_CROSS_MIN_WIDE  (5)                     // 至少 5 行"路面变宽"才算路口/岔口
+#define PURSUIT_CROSS_MIN_OPEN  (6)                     // 或者至少 6 行左右同时丢才算横臂开口
+#define PURSUIT_CROSS_MIN_BAND  (4)                     // 中断带至少 4 行（约 47mm 的路面缺口）
+#define PURSUIT_CROSS_MIN_ABOVE (4)                     // 中断带上方至少又能看清 4 行 -> 路面"回来了"
 #define PURSUIT_CROSS_MIN_VALID (8)                     // 至少有 8 行看清楚才算可信（否则摄像头有问题）
-#define PURSUIT_CROSS_TICKS     (20)                    // 路口最多保持 20 帧（50fps 下 0.4 s）
-#define PURSUIT_CROSS_CLEAN     (4)                     // 连续 4 帧没有开口 -> 提前退出
+#define PURSUIT_CROSS_TICKS     (32)                    // 路口保持 32 帧（50fps 下 0.64 s，够开过 640mm 宽的横向路）
+#define PURSUIT_CROSS_CLEAN     (8)                     // 连续 8 帧没有开口才提前退出（太少会没过完就退出）
 #define PURSUIT_CROSS_REJECT    (20)                    // 出路口后 20 帧内不再判路口（防抖）
 #define PURSUIT_CROSS_MAX_KAPPA (0.0025f)               // 进路口前曲率超过这个值 -> 是弯道不是路口
+#define PURSUIT_CROSS_DELTA_MAX (6.0f)                  // 路口内前轮转角最多 6 度（绝不许横着拐进支路）
+#define PURSUIT_CROSS_LOOKAHEAD_MM (400.0f)             // 路口内的前瞻距离：固定 400mm，只沿车道轴走
+#define PURSUIT_CROSS_NEAR_ROWS (8)                     // 路口内用第 1~8 行（车头前 170~310mm）当车道轴参考
+
+/* 黑色横条标记：这个赛道的十字路口是在白路面上横贴两排黑色短横条。
+ *   横条厚度 1~2 格，不够厚，pursuit_find_floor() 不会把它当边界（边界照样能找对），
+ *   但"一行里数出 >= PURSUIT_MARK_MIN_RUNS 段短暗条"就是路口的正面证据 —— 弯道永远没有。
+ *   这条判据带否决权（在其它否决之后生效），是全套判据里最硬的一条。 */
+#define PURSUIT_MARK_MIN_RUNS   (2)                     // 一行里至少 2 段短暗条才算"标记行"
+#define PURSUIT_MARK_MIN_ROWS   (2)                     // 至少 2 行有标记 -> 判定为路口
+
 
 /* ============================ 冲出赛道 ============================ */
 #define PURSUIT_OFFTRACK_MM     (190.0f)                // 最近 6 行中线偏离超过这个距离 = 车已经在赛道边缘
@@ -89,6 +116,10 @@ typedef struct
     uint8  valid_rows;                                  // 看得清的行数
     uint8  open_rows;                                   // 左右同时丢的行数
     uint8  one_side_rows;                               // 只有一侧丢的行数
+    uint8  wide_rows;                                   // 路面变宽的行数（十字/岔口的正面特征）
+    uint8  band_rows;                                   // 中断带长度（路面断掉的那一段有多长）
+    uint8  above_rows;                                  // 中断带上方又看清的行数（>0 且够多 = 路口；=0 = 弯道）
+    uint8  mark_rows;                                   // 路面内有黑色横条标记的行数（十字最硬特征）
     int16  target_row;                                  // 前瞻点所在行
     int16  target_col;                                  // 前瞻点所在列
     float  kappa;                                       // 曲率（1/mm），右转为正
@@ -100,6 +131,7 @@ typedef struct
     float  target_x_mm;                                 // 前瞻点横向（相对车轴中心，右为正）
     float  target_y_mm;                                 // 前瞻点纵向
     float  near_off_mm;                                 // 最近 6 行的中线横向偏移
+    float  half_width_mm;                               // 学习到的半赛道宽（mm），调参时看这个判断标定对不对
 } pursuit_struct;
 
 extern pursuit_struct pursuit_info;                     // 主循环用（显示、调试）
