@@ -19,6 +19,17 @@
 #include "Encoder_REMAIN.h"
 #include "Servo_REMAIN.h"
 #include "Motor_REMAIN.h"
+#include "Pursuit_REMAIN.h"                                 // 纯追踪（逆透视）+ 十字状态机
+
+/* ================================ 纯追踪桥接 ================================
+ * 图像在主循环里处理（50Hz），控制在本中断里跑（200Hz）。
+ * 中间隔着一个 pursuit_struct 快照，用双缓冲发布，中断里永远读到完整的一份。 */
+static pursuit_struct control_ps;                           // 本拍取到的纯追踪快照
+static uint8          control_use_pursuit = 0;              // 1 = 本拍用纯追踪
+
+/* 纯追踪算前瞻距离要用的"规划速度"。写在 Control_Tick 里，读在 Pursuit_Process 里。
+ * 用规划值而不是实测值：实测值参与会形成"减速->前瞻变近->打角变大->更减速"的正反馈。 */
+volatile float control_base_speed_ref = CONTROL_BASE_SPEED;
 
 /* ================================ PID 结构 ================================ */
 typedef struct
@@ -318,12 +329,24 @@ void Control_Tick(void)
         return;
     }
 
-    // 3. 舵机：偏差 -> 打角
-    if(midline_info.cross)                              // 路口：先取消出弯保持，别带着旧打角冲出去
+    // 3. 舵机：纯追踪优先，算不出来再退回"偏差 -> 分段 PD"
+#if (1 == CONTROL_PURSUIT_EN)
+    control_use_pursuit = Pursuit_Get(&control_ps);      // 0 = 纯追踪这一帧不可信（标定表没好/视野太差）
+#endif
+
+    if(1 == control_use_pursuit)
     {
-        Servo_Clear_Hold();
+        /* 纯追踪输出的已经是"该打多少"，不需要再叠一层增益；内部只做限幅和斜率限制 */
+        Servo_Set_Offset(control_ps.steer_out);
     }
-    Servo_Set_Turn(error);
+    else
+    {
+        if(midline_info.cross)                          // 路口：先取消出弯保持，别带着旧打角冲出去
+        {
+            Servo_Clear_Hold();
+        }
+        Servo_Set_Turn(error);
+    }
 
     // 4. 读编码器：每 5ms 读一次并清零，读到的脉冲数就是"速度"
     speed_l = Encoder_Get_Speed(0);
@@ -569,19 +592,43 @@ void Control_Tick(void)
     }
 
     // 6. 弯道减速 + 后轮差速
-    //    弯道减速：偏差越大 -> 弯越急 -> 基础速度先降下来，避免高速冲弯打不动方向
-    abs_err = (error > 0.0f) ? (error) : (-error);
-    slow    = 1.0f - (CONTROL_CURVE_SLOW_K * abs_err);
-    if(slow < CONTROL_CURVE_SLOW_MIN) slow = CONTROL_CURVE_SLOW_MIN;
-    base_speed = CONTROL_BASE_SPEED * slow;
+    //    纯追踪接管时：slow 由前轮转角直接给出，ratio 由曲率乘后轮距给出，都是几何物理量
+    //    退回老算法时：偏差越大 -> 弯越急 -> 基础速度先降下来，避免高速冲弯打不动方向
+    if(1 == control_use_pursuit)
+    {
+        slow  = control_ps.slow;
+        ratio = control_ps.ratio;
+        if(control_ps.cross)                            // 路口横臂补出来的线不可信，慢一点
+        {
+            slow = slow * CONTROL_CROSS_SPEED_SCALE;
+        }
+        if(control_ps.off_track)                        // 车已经压到赛道边缘，先保命
+        {
+            slow = slow * CONTROL_OFFTRACK_SPEED_SCALE;
+        }
+        if(slow < 0.25f)
+        {
+            slow = 0.25f;
+        }
+        base_speed = CONTROL_BASE_SPEED * slow;
+    }
+    else
+    {
+        abs_err = (error > 0.0f) ? (error) : (-error);
+        slow    = 1.0f - (CONTROL_CURVE_SLOW_K * abs_err);
+        if(slow < CONTROL_CURVE_SLOW_MIN) slow = CONTROL_CURVE_SLOW_MIN;
+        base_speed = CONTROL_BASE_SPEED * slow;
 
-    //    后轮差速：偏差为正（赛道偏右）-> 车的右转弯 -> 后左轮(外侧)快、后右轮(内侧)慢
-    ratio = CONTROL_DIFF_K * error;
-    if(ratio >  CONTROL_DIFF_K_MAX) ratio =  CONTROL_DIFF_K_MAX;
-    if(ratio < -CONTROL_DIFF_K_MAX) ratio = -CONTROL_DIFF_K_MAX;
+        //    后轮差速：偏差为正（赛道偏右）-> 车的右转弯 -> 后左轮(外侧)快、后右轮(内侧)慢
+        ratio = CONTROL_DIFF_K * error;
+        if(ratio >  CONTROL_DIFF_K_MAX) ratio =  CONTROL_DIFF_K_MAX;
+        if(ratio < -CONTROL_DIFF_K_MAX) ratio = -CONTROL_DIFF_K_MAX;
+    }
 #if (1 == CONTROL_DIFF_REVERSE)
     ratio = -ratio;                                     // 差速方向反了的时候用
 #endif
+
+    control_base_speed_ref = base_speed;                // 下一帧纯追踪用它算前瞻距离
 
     target_l = base_speed * (1.0f + ratio);             // 后左轮
     target_r = base_speed * (1.0f - ratio);             // 后右轮

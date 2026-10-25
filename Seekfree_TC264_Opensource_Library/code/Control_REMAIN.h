@@ -90,8 +90,20 @@
 #define CONTROL_CURVE_SLOW_K        (0.0080f)
 #define CONTROL_CURVE_SLOW_MIN      (0.4500f)
 
+/* ============================ 纯追踪接管（逆透视 + pure pursuit） ============================
+ * 1-用 Pursuit_REMAIN 算出来的曲率打角和减速（推荐）
+ * 0-退回老算法（中线加权偏差 -> 分段 PD），出问题时把这里改成 0 就能立刻对比 */
+#define CONTROL_PURSUIT_EN          (1)
+#define CONTROL_CROSS_SPEED_SCALE   (0.80f)                 // 过路口整体降速到 80%（横臂补线不可信，慢一点更稳）
+#define CONTROL_OFFTRACK_SPEED_SCALE (0.45f)                // 车压到赛道边缘时降到 45%，先保命再纠偏
+
 /* ================================ 保护 ================================ */
 #define CONTROL_LOST_STOP_TICKS     (0)                     // 连续丢线后停车（0=不停车，弯道短暂丢线不会卡死）
+
+/* 纯追踪算前瞻距离时要知道"现在跑多快"。这个变量每拍由 Control_Tick 写入，
+ * 是**规划值**（含弯道减速后），不是实测值——用实测值会形成正反馈：
+ * 减速 -> 前瞻变近 -> 打角变大 -> 更减速。 */
+extern volatile float control_base_speed_ref;
 
 /* ================================ 接口 ================================ */
 void Control_Init (void);                                   // 复位 PID 与状态

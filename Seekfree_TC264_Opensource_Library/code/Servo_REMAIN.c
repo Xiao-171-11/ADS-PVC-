@@ -25,6 +25,9 @@ static float  servo_peak_abs = 0.0f;
 static float  servo_peak_out = 0.0f;
 static float  servo_err_f    = 0.0f;                   // 低通后的偏差
 static uint8  servo_deep     = 0;                      // 本弯峰值够大（真进过弯）
+static float  servo_out_prev = 0.0f;                   // 上一拍实际输出的偏移（纯追踪斜率限制用）
+static uint8  servo_out_valid = 0;                     // 上一拍输出是否有效
+static uint8  servo_mode      = 0;                     // 0=偏差打角 1=纯追踪打角（用于无扰切换）
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     舵机初始化
@@ -37,26 +40,30 @@ void Servo_Init(void)
 {
     pwm_init(SERVO_PWM_PIN, SERVO_PWM_FREQ, Servo_MID + SERVO_TRIM);
     servo_last_error = 0.0f;
+    servo_err_f      = 0.0f;
+    servo_out_prev   = 0.0f;
+    servo_out_valid  = 0;
+    servo_mode       = 0;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     直接输出舵机占空比（带限幅）
-// 参数说明     duty            占空比，超出 Servo_MID-SERVO_DUTY_RANGE_R ~ Servo_MID+SERVO_DUTY_RANGE_L 会被夹住
+// 参数说明     duty            占空比，实测允许范围 SERVO_DUTY_MIN ~ SERVO_DUTY_MAX（395 ~ 534）
 // 返回参数     void
 // 使用示例     Servo_Set_Duty(Servo_MID);
 // 备注信息     限幅是为了保护舵机，不要让它长期顶到机械死点
 //-------------------------------------------------------------------------------------------------------------------
 void Servo_Set_Duty(int32 duty)
 {
-    /* 左右不对称硬限幅：不管指令从哪来（打角、标定、以后新加的函数），都在这里被卡死，
-     * 保证占空比永远落在 395 ~ 534 之间，不会把舵机推到机械死点上堵转。 */
-    if(duty > (int32)(Servo_MID + SERVO_TRIM + SERVO_DUTY_RANGE_L))
+    /* 硬限幅：不管指令从哪来（偏差 PD、纯追踪、标定、以后新加的函数），都在这里被卡死，
+     * 保证占空比永远落在实测行程 395 ~ 534 之内，不会把舵机推到机械死点上堵转发烫。 */
+    if(duty > (int32)SERVO_DUTY_MAX)
     {
-        duty = (int32)(Servo_MID + SERVO_TRIM + SERVO_DUTY_RANGE_L);
+        duty = (int32)SERVO_DUTY_MAX;
     }
-    if(duty < (int32)(Servo_MID + SERVO_TRIM - SERVO_DUTY_RANGE_R))
+    if(duty < (int32)SERVO_DUTY_MIN)
     {
-        duty = (int32)(Servo_MID + SERVO_TRIM - SERVO_DUTY_RANGE_R);
+        duty = (int32)SERVO_DUTY_MIN;
     }
     pwm_set_duty(SERVO_PWM_PIN, (uint32)duty);
 }
@@ -86,6 +93,15 @@ void Servo_Set_Turn(float error)
 #if (1 == SERVO_REVERSE)
     error = -error;
 #endif
+
+    /* 从纯追踪切回偏差打角：偏差和上次的偏差可能差了几十，"微分项"会瞬间蹦出去一大截，
+     * 表现就是切换那一拍舵机猛甩一下。这里把历史量对齐成当前值，微分项归零，切换无扰。 */
+    if(1 == servo_mode)
+    {
+        servo_err_f      = error;
+        servo_last_error = error;
+        servo_mode       = 0;
+    }
 
     /* 偏差低通：直道上边线逐帧抖动 1~3 像素，不过滤就会被高增益放大成来回打角 */
     error = (SERVO_ERR_FILTER * error) + ((1.0f - SERVO_ERR_FILTER) * servo_err_f);
@@ -194,6 +210,67 @@ void Servo_Set_Turn(float error)
     }
 #endif
 
-    Servo_Set_Duty((int32)((float)(Servo_MID + SERVO_TRIM) - out));
+    /* 记录前先夹到行程内：偏差 PD 的远端增益是不封顶的（|error|=60 时 out 能到 200 多），
+     * 不夹的话 servo_out_prev 会记成一个物理上不存在的偏移，纯追踪接管时要花十几拍才爬回来。 */
+    if(out > (float)SERVO_DUTY_RANGE_L)
+    {
+        out = (float)SERVO_DUTY_RANGE_L;
+    }
+    if(out < -(float)SERVO_DUTY_RANGE_R)
+    {
+        out = -(float)SERVO_DUTY_RANGE_R;
+    }
+
+    Servo_Set_Duty(SERVO_DUTY_FROM_OUT(out));                   /* 极性由 SERVO_DIR 决定 */
+
+    servo_out_prev  = out;                              /* 记录本次真实输出，供纯追踪斜率限制衔接 */
+    servo_out_valid = 1;
+}
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     直接按占空比偏移打角（纯追踪用，正=向左）
+// 参数说明     offset          想要的偏移量，范围 -SERVO_DUTY_RANGE_R ~ +SERVO_DUTY_RANGE_L
+// 返回参数     void
+// 使用示例     Servo_Set_Offset(pursuit_info.steer_out);
+// 备注信息     1. 和 Servo_Set_Turn 走同一条输出通路，只是不做分段增益和微分，因为纯追踪算出来的
+//                 已经是"最终该打多少"，再叠一层增益就把物理量又变成了魔法数。
+//              2. 只做两件事：非对称限幅（保护舵机）和斜率限制（保护齿轮、抑制电流冲击）。
+//              3. 和 Servo_Set_Turn 之间可以任意切换，切换那一拍不会跳。
+//-------------------------------------------------------------------------------------------------------------------
+void Servo_Set_Offset(float offset)
+{
+    float d = 0.0f;
+
+    if(offset > (float)SERVO_DUTY_RANGE_L)
+    {
+        offset = (float)SERVO_DUTY_RANGE_L;
+    }
+    if(offset < -(float)SERVO_DUTY_RANGE_R)
+    {
+        offset = -(float)SERVO_DUTY_RANGE_R;
+    }
+
+    if(0 == servo_out_valid)
+    {
+        servo_out_prev  = offset;                       /* 第一拍不限制斜率，否则上电会慢慢爬过去 */
+        servo_out_valid = 1;
+    }
+
+    d = offset - servo_out_prev;
+    if(d > SERVO_SLEW_MAX)
+    {
+        offset = servo_out_prev + SERVO_SLEW_MAX;
+    }
+    if(d < (-SERVO_SLEW_MAX))
+    {
+        offset = servo_out_prev - SERVO_SLEW_MAX;
+    }
+
+    servo_out_prev = offset;
+    servo_mode     = 1;
+    servo_hold_cnt = 0;                                 /* 纯追踪接管时不要残留出弯保持 */
+    servo_armed    = 0;
+
+    Servo_Set_Duty(SERVO_DUTY_FROM_OUT(offset));                /* 极性由 SERVO_DIR 决定 */
 }
 

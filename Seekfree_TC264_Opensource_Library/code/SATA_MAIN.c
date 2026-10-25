@@ -24,6 +24,8 @@
 static void SATA_Init(void)
 {
     Camera_LCD_Init();                                  // 总钻风 MT9V03X + TFT180
+    IPM_Init();                                         // 逆透视查表（必须在摄像头初始化之后）
+    Pursuit_Init();                                     // 纯追踪状态机复位
     Badpoint_Init();                                    // 清空边缘基点信息
     Bedline_Init();                                     // 清空边缘基线信息
     MIDLine_Init();                                     // 清空中线信息
@@ -55,10 +57,15 @@ static void SATA_Frame_Process(void)
     Find_Bedline (base_image[0], MT9V03X_W, MT9V03X_H); // 边缘基线
     Find_MIDLine ();                                    // 加权求中线值 + 互补滤波
 
+    IPM_Process(base_image[0]);                         // 逆透视：188x120 -> 俯视图 56x96（查表，纯内存拷贝）
+    IPM_Show_On_TFT180();                               // IPM_DIS_EN=0 时是空函数；标定时打开看俯视图
+    Pursuit_Process();                                  // 纯追踪：俯视图找边线 -> 前瞻点 -> 曲率 -> 舵机偏移
+
     Badpoint_Show_On_TFT180();                          // 基点十字 + 基点列号
     Bedline_Show_On_TFT180();                           // 基线直线 + 基线斜率
     MIDLine_Show_On_TFT180();                           // 中线（绿色）+ 中线值 + 偏差
     Zebra_Show_On_TFT180();                             // 起停状态 W/R/F
+    Pursuit_Show_On_TFT180();                           // 纯追踪：曲率 / 转角 / 打角 / 路口标志
     Control_Show_On_TFT180();                           // 最底部一行轮速（6x8 小字，y=148，不压图像）
 }
 

@@ -270,11 +270,15 @@ uint8 Find_MIDLine(void)
     midline_info.cross = 0;
 #endif
 
-    if(midline_info.cross)                                          // 路口：强制走直线
+    if(midline_info.cross)                                          // 路口：保持上一帧的走向，不要强行回正
     {
-        midline_info.center         = (float)MIDLINE_DEFAULT_CENTER;
-        midline_info.mid_line_value = (uint8)MIDLINE_DEFAULT_CENTER;
-        midline_info.error          = 0.0f;
+        /* 原来这里是把 center/error 直接置成画面中心（偏差 0）。
+         * 但"路口回正"在物理上等于让舵机突然回中——车是斜着进路口的，
+         * 一回正就沿着斜线继续走，正好冲进路口的四个角里。这是冲出赛道的头号元凶。
+         * 改成保持进路口前的最后一条中线：车顺着自己的航向穿过去，出路口再重新捕获边线。 */
+        midline_info.center         = midline_info.last_mid_line;
+        midline_info.mid_line_value = (uint8)(midline_info.last_mid_line + 0.5f);
+        midline_info.error          = midline_info.last_mid_line - ((float)MT9V03X_W * 0.5f);
         midline_info.width          = width_ref;                    // 路口不学赛道宽度
         midline_info.valid          = 1;
         return (0);                                                 // 不更新 last_mid_line

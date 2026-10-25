@@ -131,6 +131,8 @@
 #include "Zebra_REMAIN.h"
 #include "Control_REMAIN.h"
 #include "Encoder_REMAIN.h"
+#include "IPM_REMAIN.h"                                 // 逆透视查表（依赖 Camera_REMAIN 的 base_image 尺寸）
+#include "Pursuit_REMAIN.h"                             // 纯追踪 + 十字路口状态机（依赖 IPM_REMAIN）
 //=====================================================用户层======================================================
 
 #endif
